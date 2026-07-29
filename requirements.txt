@@ -1,0 +1,7 @@
+# Runtime dependencies
+pygame>=2.5
+numpy>=1.24
+gymnasium>=0.29
+
+# Development / testing
+pytest>=8.0
