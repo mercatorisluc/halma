@@ -32,11 +32,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Controls:
+You play as the human against a bot, which moves automatically when it is its
+turn. Controls:
 
+- **Mouse** — click one of your pieces, then a highlighted destination, to move
 - **←/→** — step backward / forward through the move history
 - **↑/↓** — rotate the board by 60°
-- **Mouse** — click a piece, then a destination, to make a move (human player)
 
 ## Tests
 

@@ -79,6 +79,11 @@ class GameVisualization:
             self.input.adaptToHumanInteraction(halmaGame)
             if self.input.waitingForHumanMove:
                 self.input.handleHumanMove(halmaGame)
+            elif self.playback.moveTraveler == len(halmaGame.moves):
+                # Bot's turn at the live front of the game: play automatically.
+                # While the history is being reviewed (cursor not at the front)
+                # this is skipped, so back/forward stepping is unaffected.
+                self.playback.playNextMove()
             if halmaGame.winner() is not None:
                 running = False
             pygame.display.flip()
