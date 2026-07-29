@@ -8,7 +8,13 @@ from game.initializer import Initializer
 
 
 class HalmaGame:
-    
+    """Base game engine: owns the board, the players, the turn order and the
+    recorded move history, and enforces the rules (turn rotation, win check).
+
+    Subclasses (:class:`ComputedGame`, :class:`InteractiveGame`) only differ in
+    which players they seat.
+    """
+
     def __init__(self):
         self.initializer = Initializer()
         self.board = None
@@ -96,19 +102,29 @@ class HalmaGame:
     
                 
     def winner(self):
+        """Return the identifier of the winning player, or ``None``.
+
+        A player wins either by getting all their pieces onto their target
+        home base, or when their target base is completely full (which can
+        include opponent pieces blocking it — see
+        :meth:`playerIsWinningByBlockedFields`).
+        """
         for player in self.players:
             if player.isWinning() or (self.playerIsWinningByBlockedFields(player)):
                 return player.identifier
         return None
-    
-    
+
+
     def playerIsWinningByBlockedFields(self, player):
+        # A target base has 15 fields; if every one is occupied (by anyone),
+        # the player can no longer be blocked out and counts as home.
         k = [self.board.fields[i] for i in player.endPositions]
         k = [x for x in k if not x.isEmpty()]
         return len(k) == 15
-    
-    
+
+
     def currentPlayer(self):
+        # Turn order rotates by move count over the (randomised) play order.
         k = self.gameLength() % len(self.playOrder)
         return self.playOrder[k]
             
@@ -132,6 +148,7 @@ class HalmaGame:
             
 
 class ComputedGame(HalmaGame):
+    """A game played entirely by bots (used for simulation and the RL env)."""
 
     def __init__(self):
         super().__init__()
@@ -156,7 +173,8 @@ class ComputedGame(HalmaGame):
 
 
 class InteractiveGame(HalmaGame):
-    
+    """A game with a human player, driven through the visualization."""
+
     def __init__(self):
         super().__init__()
                 
@@ -176,21 +194,7 @@ class InteractiveGame(HalmaGame):
     
     def isHumanGame(self):
         return True
-    
-    
 
-
-
-
-    
-        
-    
-            
-            
-
-            
-        
-        
     
 
 

@@ -1,6 +1,14 @@
 from heuristics.strategy import Strategy
 
-class HalmaPlayer: 
+class HalmaPlayer:
+    """A player's pieces and goal, plus the derived sets the bots score on.
+
+    ``positions`` are the pieces' current fields; ``endPositions`` the target
+    base. ``nonArrived`` (pieces not yet home) and ``openEndPositions`` (target
+    fields still empty) are kept in sync on every move so the heuristics don't
+    have to recompute them.
+    """
+
     def __init__(self, identifier):
         self.identifier = identifier
         self.positions = set()
@@ -50,34 +58,26 @@ class HalmaPlayer:
         
         
     
-class HumanPlayer(HalmaPlayer): 
-    
+class HumanPlayer(HalmaPlayer):
+    """A player whose moves come from the visualization's click handling."""
+
     def __init__(self, identifier):
         super().__init__(identifier)
-        
-    
+
     def isHuman(self):
         return True
-    
-        
 
-class Computer(HalmaPlayer): 
-    
+
+class Computer(HalmaPlayer):
+    """A bot player that picks moves via a named heuristic strategy."""
+
     def __init__(self, identifier, strategyName):
         super().__init__(identifier)
         self.strategy = Strategy(strategyName)
-        
-        
+
     def isHuman(self):
         return False
-    
-    
-    def chooseMove(self, moves, board):
-        return self.strategy.bestMove(moves, board, self)
-    
-        
 
-    
-        
-    
-    
+    def chooseMove(self, moves, board):
+        # Delegate the choice to the configured heuristic strategy.
+        return self.strategy.bestMove(moves, board, self)

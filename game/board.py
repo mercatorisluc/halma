@@ -3,8 +3,15 @@ from game.field import HalmaField
 from game.fieldPositionsMapper import FieldPositionsMapper
 import numpy as np
 
-class HalmaBoard: 
-    
+class HalmaBoard:
+    """The 121-field star board: piece placement, move generation and the
+    heuristic scoring functions used by the bots.
+
+    Fields are addressed by integer id (0-120); ``fieldPositionsMapper`` maps
+    between ids and axial coordinates. ``distanceMatrix`` caches the board
+    distance between every pair of fields.
+    """
+
     def __init__(self):
         self.fields = [None] * 121
         self.fieldPositionsMapper = FieldPositionsMapper()
@@ -68,6 +75,12 @@ class HalmaBoard:
     
     
     def allValidMoves(self, player):
+        """All legal moves for ``player`` as ``(start, end)`` id pairs.
+
+        A single step lands on an empty neighbour; jumps chain over occupied
+        fields (BFS over reachable jump landings). Only moves whose destination
+        the player is allowed to occupy are kept.
+        """
         moves = []
         for start in player.positions:
             queue = deque([(start)])
@@ -87,6 +100,13 @@ class HalmaBoard:
         
     
     def allValidMovesWithWay(self, player):
+        """Like :meth:`allValidMoves`, but each move carries its full path
+        ``[start, ..., end]`` instead of just the endpoints.
+
+        The path (the sequence of jump landings) is what the visualization
+        needs to draw a multi-hop jump and what :class:`~game.move.Move` uses to
+        reconstruct the intermediate steps.
+        """
         allMoves = []
         for position in player.positions:
             queue = deque([[position]])
@@ -113,6 +133,11 @@ class HalmaBoard:
     
     
     def distance(self, coordA, coordB):
+        """Board distance between two axial hex coordinates.
+
+        On this grid a diagonal counts as one step when the two axes move in
+        opposite directions (hence the sign check); otherwise the moves add up.
+        """
         distanceScore = 0
         verticalDist = coordA[0] - coordB[0]
         horizontalDist = coordA[1] - coordB[1]
@@ -124,6 +149,8 @@ class HalmaBoard:
     
     
     def simpleDistanceScore(self, player):
+        # Total distance of the player's pieces from their own home base;
+        # lower is better (pieces have advanced further). Scaled by 16.
         hb = player.homeBase
         score = 0
         for id in player.positions:  
@@ -146,11 +173,17 @@ class HalmaBoard:
         return score/12
     
     
-    def advancedDistanceScore(self, player): 
+    def advancedDistanceScore(self, player):
+        # Blend of the cached distance-to-open-targets score and the simple
+        # distance-to-home score; lower is better.
         return ((self.playerDistanceScore(player)) + (self.simpleDistanceScore(player))) / 2
     
     
     def updatePlayerDistanceScore(self, player, move):
+        # Incrementally maintain player.distanceScore after a move instead of
+        # recomputing over all pieces: adjust only the terms that changed as a
+        # piece left `start` and arrived at `end` (with corrections for moves
+        # into or out of the target end positions).
         start, end = move[0], move[-1]
         toAdd, toSubtract = (0, 0)
         if start not in player.endPositions: 
@@ -171,6 +204,9 @@ class HalmaBoard:
             
     
     def sparsityScore(self, player):
+        # Rewards keeping pieces loosely clustered: penalises each piece by how
+        # far its share of occupied neighbours is from an ideal 0.75. Lower is
+        # better. Scaled by 15 (pieces per player).
         score = 0
         for id in player.positions:
             neighbours = set(self.fields[id].neighbours)
@@ -190,6 +226,8 @@ class HalmaBoard:
     
     
     def potentialJumpScore(self, player):
+        # Rewards positions that have available jumps (a piece to hop over onto
+        # an empty landing); lower score = more jump potential. Scaled by 15.
         score = 0
         for id in player.positions:
             idScore = 0
@@ -202,17 +240,12 @@ class HalmaBoard:
     
     
     def homeBonusScore(self, player):
+        # Fraction of pieces NOT yet on a target field; lower is better
+        # (0 when all 15 pieces are home).
         return 1 - len(player.positions & player.endPositions)/15
     
     
     def boardState(self):
         return np.array([field.playerID for field in self.fields])
-
-    
-    
-        
-                    
-    
-    
 
                     

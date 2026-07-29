@@ -3,7 +3,10 @@ import math
 from collections import defaultdict
 
 class BoardColorizer():
-    
+    """Colour palette for the visualization: named base colours, per-player
+    piece colours, home-base background tints, and the highlight colour used
+    for each draw flag (selected / last move / clicked / preview)."""
+
     def __init__(self):
         self.WHITE = (255, 255, 255)
         self.BLACK = (0, 0, 0)

@@ -1,12 +1,21 @@
 class Initializer:
+    """Builds the star board and the players' starting layout.
 
+    Fields are addressed three ways: an axial ``coord`` (x, y), a stable
+    sequential ``id`` (0-120), and a ``fieldNumber`` that embeds the coord in a
+    17x17 grid (``fieldNumberFromCoord``) so neighbours can be found by simple
+    offset arithmetic (see ``DIRECTIONS`` / ``directionMapper``).
+    """
+
+    # The six hex-grid directions used to wire up field adjacency.
     DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1), (-1, 1), (1, -1)]
-    
+
     def __init__(self):
         self.fields = []
     
     
     def initBoard(self, board):
+        """Create every field, wire up neighbours/jumps, and cache distances."""
         self.initNodes()
         board.setFieldPositionsMapper(self.fields)
         for field in self.fields:
@@ -49,6 +58,8 @@ class Initializer:
             
 
     def initNodes(self):
+        # The board is a central 9x9 diamond plus the four outward triangles
+        # (the star's points); assign each resulting field a stable id.
         self.fields = []
         for i in range(-4, 5):
             for j in range(-4, 5):
@@ -76,6 +87,9 @@ class Initializer:
                             
 
     def initPermissions(self, board, players):
+        # A field surrounded entirely by one player's start/end cells belongs
+        # exclusively to that player (their home triangles); every other field
+        # is open to all players.
         for player in players:
             positions = player.positions | player.endPositions
             for id in positions:
@@ -125,7 +139,3 @@ class Initializer:
     
     def allFieldNumbers(self):
         return sorted([x['fieldNumber'] for x in self.fields])
-    
-    
-                        
-                        

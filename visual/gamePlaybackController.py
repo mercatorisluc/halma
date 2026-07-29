@@ -21,13 +21,16 @@ class GamePlaybackController:
                 self.moveTraveler += 1
 
     def gameStateAt(self, moveTravelerPosition):
-        assert 0 <= moveTravlerPosition < len(self.game.moves)
+        """Set the board to the state after ``moveTravelerPosition`` recorded
+        moves have been applied (0 = starting position)."""
+        assert 0 <= moveTravelerPosition <= len(self.game.moves)
         self.goToStartingPosition()
-        for _ in range():
+        for _ in range(moveTravelerPosition):
             self.forwardGame()
 
     def goToStartingPosition(self):
-        self.moveTraveler = len(self.game.moves)
+        # Rewind from wherever the cursor currently is; the cursor and the
+        # board are kept in sync as moves are played/replayed.
         while self.moveTraveler > 0:
             self.backwardGame()
 

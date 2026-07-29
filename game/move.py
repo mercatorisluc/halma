@@ -1,7 +1,14 @@
 from collections import deque
 
-class Move: 
-    
+class Move:
+    """A single recorded move by a player.
+
+    Stored compactly as its landing steps (``[start, ..., end]``). Moves are
+    often recorded as just ``[start, end]``; :meth:`reconstructFullMove` fills
+    in the intermediate jump landings and the fields jumped over, which the
+    visualization needs to draw the full path.
+    """
+
     def __init__(self, idList, player):
         self.steps = idList
         self.start = self.steps[0]
@@ -19,6 +26,13 @@ class Move:
     
     
     def reconstructFullMove(self, board):
+        """Recover the full jump path for a move stored as just start/end.
+
+        Works in either direction (the piece may already have been moved, so
+        ``start`` can be the empty field), finds the shortest chain of jumps
+        between the two endpoints via BFS, and records the jumped-over fields.
+        A plain single step yields an empty ``jumpedOvers``.
+        """
         if board.fields[self.start].isEmpty():
             startField, endField = (self.end, self.start)
         else:
@@ -59,6 +73,8 @@ class Move:
                 self.jumpedOvers.append(id)
     
     def fullStepsList(self):
+        """Flatten the move into an alternating list
+        ``[start, over, land, over, land, ..., end]`` for drawing the path."""
         fullStepsList = []
         fullStepsList.append(self.start)
         substeps = list(self.steps)
@@ -70,6 +86,3 @@ class Move:
                 fullStepsList.append(substeps[i])
         fullStepsList.append(self.end)
         return fullStepsList
-        
-      
-    

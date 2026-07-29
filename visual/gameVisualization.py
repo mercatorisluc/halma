@@ -30,14 +30,14 @@ class GameVisualization:
         self.input = HumanInputHandler(self.playback)
 
     def initializePlayerColors(self, players):
-        # green
-        player1Colors = ((244, 67, 54))
-        self.colorizer.setPlayerWithColors(players[0].identifier, player1Colors)
         # red
+        player1Colors = (244, 67, 54)
+        self.colorizer.setPlayerWithColors(players[0].identifier, player1Colors)
+        # green
         player2Colors = (76, 175, 80)
         self.colorizer.setPlayerWithColors(players[1].identifier, player2Colors)
         # blue
-        if (len(players) > 2):
+        if len(players) > 2:
             player3Colors = (51, 153, 255)
             self.colorizer.setPlayerWithColors(players[2].identifier, player3Colors)
 
