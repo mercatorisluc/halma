@@ -70,6 +70,30 @@ def test_play_runs_a_full_bot_game_to_a_winner(game):
     assert 0 < game.gameLength() <= game.MAX_MOVES
 
 
+def test_reset_can_be_called_repeatedly(game):
+    # The Initializer instance is reused across resets, so anything it
+    # accumulates per call (its field list) must be cleared each time. The RL
+    # env resets once per episode, so a leak here corrupts every field id.
+    game.play()
+    for _ in range(3):
+        game.reset()
+        assert len(game.initializer.fields) == 121
+        assert len(game.board.fields) == 121
+        # The board and its mapper are reused rather than rebuilt, so they must
+        # be overwritten in place, never appended to.
+        assert len(game.board.fieldPositionsMapper.coordById) == 121
+        assert len(game.board.fieldPositionsMapper.idByCoord) == 121
+        assert game.gameLength() == 0
+        assert game.winner() is None
+        assert all(len(p.positions) == 15 for p in game.players)
+
+
+def test_reset_returns_a_playable_game(game):
+    game.reset()
+    player = game.currentPlayer()
+    assert len(game.board.allValidMoves(player)) > 0
+
+
 def test_current_player_rotates_through_full_play_order():
     # 3 players so the rotation period is distinguishable from a coin flip.
     game = ComputedGame()

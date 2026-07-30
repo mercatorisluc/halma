@@ -27,15 +27,10 @@ class HalmaGame:
 
 
     def initGame(self, players):
-        self.initBoard()
+        self.initializer.initializeBoard(self.board)
         self.initPlayers(players)
         self.initializer.initPermissions(self.board, self.players)
         self.moves = []
-
-
-    def initBoard(self):
-        self.board = HalmaBoard()
-        self.initializer.initBoard(self.board)
 
 
     def initStandardGame(self):

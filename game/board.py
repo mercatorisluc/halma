@@ -32,10 +32,10 @@ class HalmaBoard:
 
 
     def calculateDistanceMatrix(self):
-        for i in range(121):
-            coordA = self.fieldPositionsMapper.idDict[i]["coord"]
-            for j in range(121):
-                coordB = self.fieldPositionsMapper.idDict[j]["coord"]
+        # fields are ordered by id, so index == id and no lookup is needed.
+        coords = [field.coord for field in self.fields]
+        for i, coordA in enumerate(coords):
+            for j, coordB in enumerate(coords):
                 self.distanceMatrix[i][j] = self.distance(coordA, coordB)
 
 
@@ -130,10 +130,6 @@ class HalmaBoard:
             allMoves.extend(moves)
         validMoves = [move for move in allMoves if self.fields[move[-1]].allows(player)]
         return validMoves
-
-
-    def allFieldNumbers(self):
-        return np.array([x.fieldNumber for x in self.fields])
 
 
     def distance(self, coordA, coordB):

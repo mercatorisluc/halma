@@ -78,6 +78,14 @@ three; `Initializer` and `FieldPositionsMapper` convert between them.
 addition (`directionMapper`) before everything is re-expressed as `id`s, and it
 should not leak into new code.
 
+The three are tied together by one rule worth knowing: **a field's `id` is its
+rank in `fieldNumber` order**. `Initializer.initNodes` builds the fields in that
+order, so the id is just the index and `board.fields[id]` needs no lookup — the
+"fields must be ordered by id" contract on `setFields` is satisfied by
+construction rather than by a later sort. Translations in the other direction
+(`idByFieldNumber`, `idByCoord`, and `FieldPositionsMapper` for the
+coordinate-first callers) are plain dict lookups.
+
 ### Field permissions
 
 `Initializer.initPermissions` marks a field as exclusive to one player when
