@@ -51,6 +51,30 @@ def test_best_move_leaves_board_and_player_state_unchanged(board, game):
     assert player.positions == beforePositions
 
 
+def test_board_is_restored_when_scoring_raises(board, game):
+    # bestMove scores candidates by mutating the real board and undoing the
+    # move afterwards. If a scoring function raises, the undo must still run --
+    # otherwise the half-evaluated move stays applied to the live game.
+    player = game.players[0]
+    before = board.boardState().copy()
+    beforePositions = set(player.positions)
+    beforeScore = player.distanceScore
+
+    strategy = Strategy("advancedDistScore")
+    strategy.scoringFunction = _raise
+
+    with pytest.raises(ValueError):
+        strategy.bestMove(sorted(board.allValidMoves(player)), board, player)
+
+    assert (board.boardState() == before).all()
+    assert player.positions == beforePositions
+    assert player.distanceScore == pytest.approx(beforeScore)
+
+
+def _raise(*args):
+    raise ValueError("scoring blew up")
+
+
 def test_random_strategy_returns_one_of_the_offered_moves(board, game):
     player = game.players[0]
     moves = board.allValidMoves(player)

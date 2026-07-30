@@ -1,4 +1,5 @@
 from collections import deque
+from contextlib import contextmanager
 
 import numpy as np
 
@@ -19,7 +20,7 @@ class HalmaBoard:
     def __init__(self):
         self.fields: list[HalmaField] = []
         self.idByCoord = {}
-        self.distanceMatrix = [[0 for _ in range(121)] for _ in range(121)]
+        self.distanceMatrix = []
 
 
     def setFields(self, fields):
@@ -39,9 +40,7 @@ class HalmaBoard:
     def calculateDistanceMatrix(self):
         # fields are ordered by id, so index == id and no lookup is needed.
         coords = [field.coord for field in self.fields]
-        for i, coordA in enumerate(coords):
-            for j, coordB in enumerate(coords):
-                self.distanceMatrix[i][j] = self.distance(coordA, coordB)
+        self.distanceMatrix = [[self.distance(a, b) for b in coords] for a in coords]
 
 
     def placePiece(self, id, playerID):
@@ -59,6 +58,26 @@ class HalmaBoard:
         self.removePiece(start)
         player.updatePositionWithMove(move)
         self.updatePlayerDistanceScore(player, move)
+
+
+    @contextmanager
+    def moveApplied(self, move, player):
+        """Apply ``move`` for the duration of the block, then take it back.
+
+        Judging a candidate move means looking at the board as it would be
+        afterwards. Rather than copy the board, it is mutated and restored --
+        which is sound because reversing a move is an exact inverse, including
+        the incrementally maintained ``player.distanceScore`` (both properties
+        are pinned in ``tests/test_scores.py``).
+
+        The undo runs in a ``finally``: without it, a scoring function that
+        raises would leave the move applied to the real game board.
+        """
+        self.applyMoveForPlayer(move, player)
+        try:
+            yield self
+        finally:
+            self.applyMoveForPlayer((move[-1], move[0]), player)
 
 
     def getValidNeighbourFields(self, id):
@@ -86,55 +105,41 @@ class HalmaBoard:
     def allValidMoves(self, player):
         """All legal moves for ``player`` as ``(start, end)`` id pairs.
 
-        A single step lands on an empty neighbour; jumps chain over occupied
-        fields (BFS over reachable jump landings). Only moves whose destination
-        the player is allowed to occupy are kept.
+        The endpoints view of :meth:`allValidMovesWithWay` — the same moves
+        without the intermediate jump landings, which only the visualization
+        and :class:`~game.move.Move` need.
         """
-        moves = []
-        for start in player.positions:
-            queue = deque([(start)])
-            visited = set()
-            visited.add(start)
-            visited.update(self.getValidNeighbourFields(start))
-            while queue:
-                curr_position = queue.popleft()
-                jump_positions = self.getValidJumpFields(curr_position)
-                for jump_position in jump_positions:
-                    if jump_position not in visited:
-                        visited.add(jump_position)
-                        queue.append(jump_position)
-            visited.remove(start)
-            moves.extend([(start, end) for end in visited])
-        return [move for move in moves if self.fields[move[-1]].allows(player)]
+        return [(way[0], way[-1]) for way in self.allValidMovesWithWay(player)]
 
 
     def allValidMovesWithWay(self, player):
-        """Like :meth:`allValidMoves`, but each move carries its full path
-        ``[start, ..., end]`` instead of just the endpoints.
+        """All legal moves for ``player`` as full paths ``[start, ..., end]``.
 
-        The path (the sequence of jump landings) is what the visualization
-        needs to draw a multi-hop jump and what :class:`~game.move.Move` uses to
-        reconstruct the intermediate steps.
+        A single step lands on an empty neighbour; jumps hop over an occupied
+        field onto the empty one beyond and chain, so the path records every
+        landing along the way. Only moves whose destination the player is
+        allowed to occupy are kept.
+
+        ``reachable`` is seeded with the piece's own field and its single-step
+        neighbours, which does two things: a destination is only ever offered
+        once, and a step is never chained into a jump — only the piece's own
+        field is queued, so jumps start from there.
         """
         allMoves = []
-        for position in player.positions:
-            queue = deque([[position]])
-            moves = []
-            visited = set()
-            moves.extend([[position, x] for x in self.getValidNeighbourFields(position)])
-            visited.update(self.getValidNeighbourFields(position))
-            visited.add(position)
+        for start in player.positions:
+            steps = self.getValidNeighbourFields(start)
+            moves = [[start, end] for end in steps]
+            reachable = {start, *steps}
+            queue = deque([[start]])
             while queue:
-                tempWay = queue.popleft()
-                jumpPositions = self.getValidJumpFields(tempWay[-1])
-                for jumpPosition in jumpPositions:
-                    if jumpPosition not in visited:
-                        visited.add(jumpPosition)
-                        moves.append([*tempWay, jumpPosition])
-                        queue.append([*tempWay, jumpPosition])
+                way = queue.popleft()
+                for landing in self.getValidJumpFields(way[-1]):
+                    if landing not in reachable:
+                        reachable.add(landing)
+                        moves.append([*way, landing])
+                        queue.append([*way, landing])
             allMoves.extend(moves)
-        validMoves = [move for move in allMoves if self.fields[move[-1]].allows(player)]
-        return validMoves
+        return [move for move in allMoves if self.fields[move[-1]].allows(player)]
 
 
     def distance(self, coordA, coordB):
@@ -211,7 +216,7 @@ class HalmaBoard:
     def sparsityScore(self, player):
         # Rewards keeping pieces loosely clustered: penalises each piece by how
         # far its share of occupied neighbours is from an ideal 0.75. Lower is
-        # better. Scaled by 15 (pieces per player).
+        # better. Averaged over the player's pieces.
         score = 0
         for id in player.positions:
             neighbours = set(self.fields[id].neighbours)
@@ -220,7 +225,7 @@ class HalmaBoard:
                 if not self.fields[neighbour].isEmpty():
                     idScore += 1
             score += 4/3 * abs(0.75 - (idScore / len(neighbours)))
-        return score/15
+        return score/len(player.positions)
 
 
     def playerSparsityScore(self, player):
@@ -235,7 +240,8 @@ class HalmaBoard:
 
     def potentialJumpScore(self, player):
         # Rewards positions that have available jumps (a piece to hop over onto
-        # an empty landing); lower score = more jump potential. Scaled by 15.
+        # an empty landing); lower score = more jump potential. Averaged over
+        # the player's pieces.
         score = 0
         for id in player.positions:
             idScore = 0
@@ -244,13 +250,13 @@ class HalmaBoard:
                 if (not self.fields[jumpOver].isEmpty()) and (self.fields[jumpOn].isEmpty()):
                     idScore += 1
             score += (1 - idScore/len(jumpNeighbours))
-        return score/15
+        return score/len(player.positions)
 
 
     def homeBonusScore(self, player):
-        # Fraction of pieces NOT yet on a target field; lower is better
-        # (0 when all 15 pieces are home).
-        return 1 - len(player.positions & player.endPositions)/15
+        # Fraction of target fields NOT yet occupied by the player; lower is
+        # better (0 once every piece is home).
+        return 1 - len(player.positions & player.endPositions)/len(player.endPositions)
 
 
     def boardState(self):

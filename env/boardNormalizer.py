@@ -11,7 +11,7 @@ class Normalizer:
 
     def initPermutations(self):
         permutations = {}
-        permutations["player1WithoutFlip"] = np.arange(121)
+        permutations["player1WithoutFlip"] = np.arange(len(self.boardStructure))
         permutations["player1WithFlip"] = self.turnAndFlipBoardForPlayer1()
         permutations["player2WithoutFlip"] = self.turnBoardForPlayer2()
         permutations["player2WithFlip"] = self.turnAndFlipBoardForPlayer2()

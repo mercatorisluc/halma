@@ -122,11 +122,11 @@ class HalmaGame:
 
 
     def playerIsWinningByBlockedFields(self, player):
-        # A target base has 15 fields; if every one is occupied (by anyone),
-        # the player can no longer be blocked out and counts as home.
-        k = [self.board.fields[i] for i in player.endPositions]
-        k = [x for x in k if not x.isEmpty()]
-        return len(k) == 15
+        # If every field of the target base is occupied (by anyone), the player
+        # can no longer be blocked out and counts as home.
+        targetFields = [self.board.fields[i] for i in player.endPositions]
+        occupied = [field for field in targetFields if not field.isEmpty()]
+        return len(occupied) == len(player.endPositions)
 
 
     def currentPlayer(self):

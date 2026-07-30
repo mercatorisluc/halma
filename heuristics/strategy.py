@@ -43,12 +43,15 @@ class Strategy:
 
 
     def bestMove(self, moves, board, player):
+        """Pick a lowest-scoring move, breaking ties at random.
+
+        Each candidate is scored on the board as it would look after the move;
+        ``moveApplied`` puts it back afterwards.
+        """
         moveValuePairs = {}
         for move in moves:
-            board.applyMoveForPlayer(move, player)
-            moveValuePairs[tuple(move)] = self.scoringFunction(board, player)
-            board.applyMoveForPlayer((move[-1], move[0]), player)
+            with board.moveApplied(move, player):
+                moveValuePairs[tuple(move)] = self.scoringFunction(board, player)
         minValue = min(moveValuePairs.values())
         possibleMoves = [key for key, value in moveValuePairs.items() if value == minValue]
-        chosenMove = random.choice(possibleMoves)
-        return chosenMove
+        return random.choice(possibleMoves)

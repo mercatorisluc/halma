@@ -47,7 +47,7 @@ class GameVisualization:
         self.projector.computeEdges(self.game.board)
         self.initializePlayerColors(self.game.players)
 
-    def handle_events(self):
+    def handleEvents(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -75,7 +75,7 @@ class GameVisualization:
                 self.input.waitingForHumanMove,
                 self.input.validHumanMoves,
             )
-            running = self.handle_events()
+            running = self.handleEvents()
             self.input.adaptToHumanInteraction(halmaGame)
             if self.input.waitingForHumanMove:
                 self.input.handleHumanMove(halmaGame)
