@@ -18,6 +18,10 @@ experiments.
 The game engine (`game/`) has no dependency on pygame; the visualization is one
 possible frontend on top of it.
 
+For how it all fits together — layer diagram, board geometry, the field
+addressing schemes and the invariants to respect — see
+[ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Setup
 
 ```bash
