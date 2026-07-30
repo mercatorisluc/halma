@@ -19,9 +19,19 @@ pytest
 # Run a single test file / test
 pytest tests/test_moves.py
 pytest tests/test_moves.py::test_is_jump_move
+
+# Lint (must stay clean)
+ruff check .
+ruff check . --fix
 ```
 
-There is no lint/type-check config or build step; `pytest` is the only CI-relevant command.
+`pytest` and `ruff check .` are the two CI-relevant commands; there is no build
+step and no type checking. The ruff rule set is pinned explicitly in `ruff.toml`
+rather than left to ruff's shifting defaults. Note that `N` (pep8-naming) is
+deliberately **not** enabled: this project uses camelCase throughout, which is
+un-pythonic but consistent, and enabling `N` would flag ~300 violations and
+invite a rename touching every file for no functional gain. Match the
+surrounding camelCase in new code.
 
 ## Architecture
 

@@ -71,7 +71,8 @@ class BoardRenderer:
         board = self.game.board
         proj = [self.projector.visualPosition(board.fields[id].coord) for id in move]
         for i in range(len(proj) - 1):
-            pygame.draw.line(self.screen, self.colorizer.colorForFlag(flag), proj[i], proj[i + 1], 6)
+            pygame.draw.line(
+                self.screen, self.colorizer.colorForFlag(flag), proj[i], proj[i + 1], 6)
         self.drawFields([board.fields[id] for id in move], flag)
 
     def drawValidMoves(self, start, validHumanMoves):

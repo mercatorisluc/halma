@@ -1,6 +1,7 @@
 from collections import defaultdict
 
-class BoardColorizer():
+
+class BoardColorizer:
     """Colour palette for the visualization: named base colours, per-player
     piece colours, home-base background tints, and the highlight colour used
     for each draw flag (selected / last move / clicked / preview)."""
@@ -14,34 +15,34 @@ class BoardColorizer():
         self.playerColorsDict = defaultdict(lambda: self.GREY)
         self.backgroundColors = [(239, 154, 154), (129, 212, 250), (165, 214, 167)]
 
-        
+
     def setPlayerWithColors(self, playerID, color):
         self.playerColorsDict[playerID] = color
-        
-    
+
+
     def playerColor(self, playerID):
         return self.playerColorsDict[playerID]
-    
-    
+
+
     def colorForFlag(self, flag):
         if flag == 'M':
             return self.moveHighlighting()
         elif (flag == 'P') or (flag == 'C'):
             return self.clickHighlighting()
-    
-    
+
+
     def moveHighlighting(self):
         return self.VIOLET
-    
-    
+
+
     def clickHighlighting(self):
         return self.YELLOW
 
 
     def black(self):
         return self.BLACK
-    
-    
+
+
     def white(self):
         return self.WHITE
-    
+

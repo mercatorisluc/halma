@@ -78,6 +78,6 @@ def test_current_player_rotates_through_full_play_order():
     for _ in range(len(game.playOrder)):
         player = game.currentPlayer()
         seenIdentifiers.append(player.identifier)
-        move = sorted(game.board.allValidMoves(player))[0]
+        move = min(game.board.allValidMoves(player))
         game.playMove(player, move)
     assert seenIdentifiers == [p.identifier for p in game.playOrder]

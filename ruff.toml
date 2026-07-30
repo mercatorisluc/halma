@@ -1,0 +1,29 @@
+# Ruff configuration. Run with:  ruff check .   /   ruff check . --fix
+#
+# The rule set is chosen explicitly rather than left to ruff's defaults, which
+# shift between releases.
+
+line-length = 100
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings (trailing whitespace etc.)
+    "F",    # pyflakes: unused imports/variables, undefined names
+    "I",    # import sorting
+    "UP",   # pyupgrade: outdated syntax
+    "B",    # bugbear: likely bugs (mutable defaults, unused loop vars, ...)
+    "SIM",  # simplifiable code
+    "C4",   # comprehension style
+    "FURB", # modernisation refurbishing
+    "RUF",  # ruff's own rules
+]
+
+# NOT enabled: "N" (pep8-naming). This project uses camelCase throughout
+# (allValidMoves, playerSparsityScore, ...). That is un-pythonic but it is a
+# deliberate, consistent convention -- enabling N would report ~300 violations
+# and invite a rename that touches every file for no functional gain.
+
+[lint.per-file-ignores]
+# Test names describe a scenario and run long; wrapping them hurts readability.
+"tests/*" = ["E501"]

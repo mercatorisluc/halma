@@ -22,7 +22,7 @@ def test_valid_move_targets_are_empty_and_allowed(board, game):
 
 def test_apply_move_moves_the_piece(board, game):
     player = game.players[0]
-    start, end = sorted(board.allValidMoves(player))[0]
+    start, end = min(board.allValidMoves(player))
     board.applyMoveForPlayer((start, end), player)
     assert board.fields[start].isEmpty()
     assert board.fields[end].playerID == player.identifier
@@ -32,7 +32,7 @@ def test_apply_move_moves_the_piece(board, game):
 def test_apply_then_reverse_restores_the_board(board, game):
     player = game.players[0]
     before = board.boardState().copy()
-    start, end = sorted(board.allValidMoves(player))[0]
+    start, end = min(board.allValidMoves(player))
     board.applyMoveForPlayer((start, end), player)
     board.applyMoveForPlayer((end, start), player)  # reverse == undo
     assert (board.boardState() == before).all()

@@ -1,7 +1,10 @@
 # Runtime dependencies
 pygame>=2.5
 numpy>=1.24
-gymnasium>=0.29
+# 1.0 changed the core API (step returns 5 values, reset returns (obs, info)).
+# env/ targets that API, so do not fall back to the 0.x line.
+gymnasium>=1.0
 
 # Development / testing
 pytest>=8.0
+ruff>=0.16          # linter; rule set configured in ruff.toml

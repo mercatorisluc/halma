@@ -1,5 +1,6 @@
 from collections import deque
 
+
 class Move:
     """A single recorded move by a player.
 
@@ -15,16 +16,16 @@ class Move:
         self.end = self.steps[-1]
         self.player = player
         self.jumpedOvers = None
-                    
-    
+
+
     def partMoves(self):
         return [(self.steps[i], self.steps[i+1]) for i in range(len(self.steps)-1)]
-    
-    
+
+
     def needsReconstruction(self):
         return self.jumpedOvers is None
-    
-    
+
+
     def reconstructFullMove(self, board):
         """Recover the full jump path for a move stored as just start/end.
 
@@ -50,18 +51,18 @@ class Move:
                 jumpPositions = board.getValidJumpFields(tempWay[-1])
                 for jumpPosition in jumpPositions:
                     if jumpPosition == endField:
-                        validMoves.append(tempWay + [endField])
-                    elif jumpPosition not in visited: 
+                        validMoves.append([*tempWay, endField])
+                    elif jumpPosition not in visited:
                         visited.add(jumpPosition)
-                        queue.append(tempWay + [jumpPosition])
+                        queue.append([*tempWay, jumpPosition])
             assert len(validMoves) > 0
             move = min(validMoves, key=len)
             if board.fields[self.start].isEmpty():
                 move.reverse()
             self.steps = move
             self.calculateJumpedOverFields(board)
-    
-    
+
+
     def calculateJumpedOverFields(self, board):
         self.jumpedOvers = []
         for partMove in self.partMoves():
@@ -71,7 +72,7 @@ class Move:
                 coordY = (board.fields[start].coord[1] + board.fields[end].coord[1]) / 2
                 id = board.fieldPositionsMapper.idFromCoord((coordX, coordY))
                 self.jumpedOvers.append(id)
-    
+
     def fullStepsList(self):
         """Flatten the move into an alternating list
         ``[start, over, land, over, land, ..., end]`` for drawing the path."""

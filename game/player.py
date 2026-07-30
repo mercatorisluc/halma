@@ -1,5 +1,6 @@
 from heuristics.strategy import Strategy
 
+
 class HalmaPlayer:
     """A player's pieces and goal, plus the derived sets the bots score on.
 
@@ -18,12 +19,12 @@ class HalmaPlayer:
         self.nonArrived = set()
         self.homeBase = None
         self.distanceScore = 0
-        
-    
+
+
     def setHomeBase(self, position):
         self.homeBase = position
-                               
-        
+
+
     def prepareForGameStart(self, board):
         for id in self.startPositions:
             board.fields[id].playerID = self.identifier
@@ -43,21 +44,21 @@ class HalmaPlayer:
         self.nonArrived.add(end)
         self.nonArrived.discard(start)
         self.nonArrived -= self.endPositions
-               
-    
+
+
     def isWinning(self):
         return (self.positions == self.endPositions)
-        
-        
+
+
     def setStartPositions(self, positions):
         self.startPositions = set(positions)
-        
-        
+
+
     def setEndPositions(self, positions):
         self.endPositions = set(positions)
-        
-        
-    
+
+
+
 class HumanPlayer(HalmaPlayer):
     """A player whose moves come from the visualization's click handling."""
 

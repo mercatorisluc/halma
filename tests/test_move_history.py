@@ -5,7 +5,7 @@ from game.move import Move
 
 def test_play_move_records_history(game):
     player = game.currentPlayer()
-    move = sorted(game.board.allValidMoves(player))[0]
+    move = min(game.board.allValidMoves(player))
     assert game.gameLength() == 0
     game.playMove(player, move)
     assert game.gameLength() == 1
@@ -16,7 +16,7 @@ def test_play_move_records_history(game):
 
 def test_current_player_alternates_with_move_count(game):
     first = game.currentPlayer()
-    move = sorted(game.board.allValidMoves(first))[0]
+    move = min(game.board.allValidMoves(first))
     game.playMove(first, move)
     second = game.currentPlayer()
     assert first is not second
