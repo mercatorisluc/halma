@@ -1,6 +1,4 @@
-from copy import copy
 import random
-import math
 from game.board import HalmaBoard
 from game.player import Computer, HumanPlayer
 from game.move import Move
@@ -14,6 +12,10 @@ class HalmaGame:
     Subclasses (:class:`ComputedGame`, :class:`InteractiveGame`) only differ in
     which players they seat.
     """
+
+    # Cut a bot-vs-bot game off after this many moves so a stalemate between
+    # two heuristics cannot loop forever.
+    MAX_MOVES = 250
 
     def __init__(self):
         self.initializer = Initializer()
@@ -70,17 +72,20 @@ class HalmaGame:
     
                         
     def play(self):
-        maxMoves = 250
-        for i in range(maxMoves):
+        """Play the game out to a winner and return that player's identifier.
+
+        Returns ``None`` if no one has won within ``MAX_MOVES`` (a draw by
+        exhaustion). Deliberately silent: this runs thousands of times during
+        bot simulation, so the caller decides whether to report anything.
+        """
+        for _ in range(self.MAX_MOVES):
             player = self.currentPlayer()
             self.playNextMove(player)
             if self.winner() is not None:
-                print(f'{self.winner()} wins in {len(self.moves)} moves!!')
-                break       
-        if len(self.moves) >= maxMoves:
-            print("No winner :(") 
-            
-    
+                return self.winner()
+        return None
+
+
     def playNextMove(self, player):
         chosenMove = self.getNextMove(player)
         self.playMove(player, chosenMove)

@@ -23,7 +23,7 @@ class HalmaField:
         
     
     def isEmpty(self):
-        return (self.playerID == None) or (self.playerID == 0)
+        return self.playerID == 0
     
     
     def setPermissions(self, players):

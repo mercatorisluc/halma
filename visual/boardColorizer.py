@@ -1,5 +1,3 @@
-import pygame
-import math
 from collections import defaultdict
 
 class BoardColorizer():
@@ -38,12 +36,8 @@ class BoardColorizer():
     
     def clickHighlighting(self):
         return self.YELLOW
-    
-    
-    def playerColor(self, playerID):
-        return self.playerColorsDict[playerID]
-    
-    
+
+
     def black(self):
         return self.BLACK
     

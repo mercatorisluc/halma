@@ -62,14 +62,6 @@ class Normalizer():
         return np.argsort([x[2] for x in permutation])
     
     
-    def otherTurnAndFlipBoardForPlayer2(self):
-        permutation1 = [(-x-y, x, _) for x, y, _ in self.boardStructure]
-        permutation2 = [(-x, x+y, _) for (x, y, _) in permutation1]
-        permutation3 = [(-y, x+y, _) for x, y, _ in permutation2]
-        permutation3.sort(key=lambda x: (x[1], x[0])) 
-        return np.argsort([x[2] for x in permutation3])
-    
-    
     def permute(self, observation, permutationKey):
         obs = np.array(observation)
         perm = np.array(self.permutations[permutationKey])

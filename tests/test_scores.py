@@ -31,3 +31,26 @@ def test_home_bonus_score_is_one_before_any_piece_arrives(board, player):
 
 def test_potential_jump_score(board, player):
     assert board.potentialJumpScore(player) == pytest.approx(0.8400000000000001)
+
+
+# ``player.distanceScore`` is maintained incrementally by
+# updatePlayerDistanceScore instead of being recomputed. Two invariants make
+# that safe, and both are relied on elsewhere: Strategy.bestMove scores a move
+# by applying and then reversing it, and the playback controller steps the
+# history backwards the same way.
+
+def test_distance_score_is_restored_by_reversing_a_move(board, player):
+    before = player.distanceScore
+    for move in sorted(board.allValidMoves(player)):
+        board.applyMoveForPlayer(move, player)
+        board.applyMoveForPlayer((move[-1], move[0]), player)
+        assert player.distanceScore == pytest.approx(before)
+
+
+def test_incremental_distance_score_matches_a_full_recomputation(game):
+    # Play a whole game so pieces actually reach their target base, which is
+    # what exercises the correction branches in updatePlayerDistanceScore.
+    game.play()
+    for player in game.players:
+        recomputed = game.board.calculatePlayerDistanceScore(player)
+        assert player.distanceScore == pytest.approx(recomputed)

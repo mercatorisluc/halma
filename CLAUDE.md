@@ -92,10 +92,20 @@ legal move); actions are `start*121 + end` encoded/decoded via
 
 ## Current status / in-flight direction
 
-Engine and visualization are refactored and characterization-tested (see
-`tests/`, covering `board`/`move`/`player` behavior). Not yet covered by tests:
-`gameManager`, `heuristics/strategy.py`, `visual/`, `env/`. The heuristic bots in
-`heuristics/strategy.py` are the only working bots today; the Gymnasium env is
-scaffolding for a planned self-play RL bot, not yet wired to a training loop or
-producing a `models/` checkpoint. A browser-based frontend (replacing the pygame
-GUI) is a planned direction, not yet started.
+Engine, game manager and the heuristic strategies are refactored and
+characterization-tested (see `tests/`, covering `board`/`move`/`player`/
+`gameManager`/`heuristics.strategy` behavior). Not yet covered by tests:
+`visual/`, `env/` — left untested on purpose, since both are about to be
+reworked (see below) rather than kept as-is.
+
+Three-phase plan toward a strong browser-playable bot, in order:
+
+1. **Tests** (done) — close the coverage gaps above the engine.
+2. **RL bot** (next) — `HalmaEnv.step()` currently takes `(player,
+   permutationKey, action)` instead of the standard Gymnasium `step(action)`;
+   fix the API, then train via self-play PPO (stable-baselines3) against the
+   existing heuristic bots as a baseline opponent. `dummyNN` (random legal
+   move) and the empty `models/` directory are placeholders for this.
+3. **Browser GUI** (after) — replace the pygame `visual/` frontend with a
+   FastAPI + WebSocket backend around the untouched `game/` engine and the
+   trained bot, plus an HTML5-canvas frontend.

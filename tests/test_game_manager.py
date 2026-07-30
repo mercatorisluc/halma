@@ -64,9 +64,10 @@ def test_play_runs_a_full_bot_game_to_a_winner(game):
     # Integration test: exercises getNextMove -> Computer.chooseMove ->
     # Strategy.bestMove end to end, not just the pre-recorded moves the other
     # tests apply directly.
-    game.play()
-    assert game.winner() in (1, 2)
-    assert 0 < game.gameLength() <= 250
+    result = game.play()
+    assert result == game.winner()
+    assert result in (1, 2)
+    assert 0 < game.gameLength() <= game.MAX_MOVES
 
 
 def test_current_player_rotates_through_full_play_order():

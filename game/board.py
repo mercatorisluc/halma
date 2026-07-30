@@ -220,10 +220,12 @@ class HalmaBoard:
     
     
     def playerSparsityScore(self, player):
-        sparsityScore = 0
-        centerDist = np.mean([self.distanceMatrix[p][player.homeBase] for p in player.positions])
-        maxDist = max([(self.distanceMatrix[p][player.homeBase] - centerDist) for p in player.positions])
-        return maxDist/12
+        # How far the most trailing piece lags behind the group: the largest
+        # deviation of any piece's distance-from-home above the group mean.
+        # Lower is better (pieces advance together). Scaled by 12.
+        meanDist = np.mean([self.distanceMatrix[p][player.homeBase] for p in player.positions])
+        maxDeviation = max([(self.distanceMatrix[p][player.homeBase] - meanDist) for p in player.positions])
+        return maxDeviation/12
     
     
     def potentialJumpScore(self, player):
@@ -232,11 +234,11 @@ class HalmaBoard:
         score = 0
         for id in player.positions:
             idScore = 0
-            dicts = self.fields[id].jumpNeighbours.items()
-            for jumpOver, jumpOn in self.fields[id].jumpNeighbours.items():
+            jumpNeighbours = self.fields[id].jumpNeighbours
+            for jumpOver, jumpOn in jumpNeighbours.items():
                 if (not self.fields[jumpOver].isEmpty()) and (self.fields[jumpOn].isEmpty()):
                     idScore += 1
-            score += (1 - idScore/len(dicts))
+            score += (1 - idScore/len(jumpNeighbours))
         return score/15
     
     

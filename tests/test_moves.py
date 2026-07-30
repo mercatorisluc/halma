@@ -1,7 +1,5 @@
 """Characterization tests for move generation and application."""
 
-import pytest
-
 
 def test_fresh_start_offers_only_single_step_moves(board, game):
     player = game.players[0]
