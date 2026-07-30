@@ -46,11 +46,11 @@ class HalmaGame:
     def initPlayers(self, players):
         self.players = []
         if len(players) > 0:
-            self.setPlayerPositions(players[0], self.initializer.player1Positions())
+            self.setPlayerPositions(players[0], self.initializer.player1Positions(self.board))
         if len(players) > 1:
-            self.setPlayerPositions(players[1], self.initializer.player2Positions())
+            self.setPlayerPositions(players[1], self.initializer.player2Positions(self.board))
         if len(players) > 2:
-            self.setPlayerPositions(players[2], self.initializer.player3Positions())
+            self.setPlayerPositions(players[2], self.initializer.player3Positions(self.board))
         for player in players:
             self.players.append(player)
             player.prepareForGameStart(self.board)

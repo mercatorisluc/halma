@@ -4,103 +4,95 @@ from game.field import HalmaField
 class Initializer:
     """Builds the star board and the players' starting layout.
 
+    Stateless on purpose: it constructs things and hands them over, so nothing
+    it derives can go stale or be read after the fact. Everything it needs to
+    look up afterwards it asks the board for, which owns that data.
+
     Fields are addressed three ways: an axial ``coord`` (x, y), a stable
     sequential ``id`` (0-120), and a ``fieldNumber`` that embeds the coord in a
     17x17 grid (``fieldNumberFromCoord``) so neighbours can be found by simple
-    offset arithmetic (see ``DIRECTIONS`` / ``directionMapper``).
-
-    The three are tied together by one rule: **a field's id is its rank in
-    fieldNumber order**. Building the fields in that order (see ``initNodes``)
-    therefore produces the ids directly, and ``idByFieldNumber`` / ``idByCoord``
-    make every later translation a dict lookup.
+    offset arithmetic (see ``DIRECTIONS`` / ``directionMapper``). They are tied
+    together by one rule: **a field's id is its rank in fieldNumber order**, so
+    building the fields in that order (see ``buildFields``) produces the ids
+    directly. ``fieldNumber`` is scaffolding for wiring up edges and is not
+    used anywhere else.
     """
 
     # The six hex-grid directions used to wire up field adjacency. A tuple so
     # the shared class attribute cannot be mutated by accident.
     DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1), (-1, 1), (1, -1))
 
-    def __init__(self):
-        self.fields = []
-        self.idByFieldNumber = {}
-        self.idByCoord = {}
-
-
     def initializeBoard(self, board):
         """Create every field, wire up neighbours/jumps, and cache distances."""
-        self.initNodes()
-        board.setFieldPositionsMapper(self.fields)
-        board.setFields(self.fields)
+        board.setFields(self.buildFields())
         self.initEdges(board)
         board.calculateDistanceMatrix()
 
 
-    def player1Positions(self):
+    def player1Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i+1):
-                startPositions.append(self.identifierFromCoord((i, -4-j)))
-                endPositions.append(self.identifierFromCoord((-i, 4+j)))
-        homeBase = self.identifierFromCoord((-4, 8))
+                startPositions.append(board.idFromCoord((i, -4-j)))
+                endPositions.append(board.idFromCoord((-i, 4+j)))
+        homeBase = board.idFromCoord((-4, 8))
         return (startPositions, endPositions, homeBase)
 
 
-    def player2Positions(self):
+    def player2Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i+1):
-                startPositions.append(self.identifierFromCoord((-4-j, i)))
-                endPositions.append(self.identifierFromCoord((4+j, -i)))
-        homeBase = self.identifierFromCoord((8, -4))
+                startPositions.append(board.idFromCoord((-4-j, i)))
+                endPositions.append(board.idFromCoord((4+j, -i)))
+        homeBase = board.idFromCoord((8, -4))
         return (startPositions, endPositions, homeBase)
 
 
-    def player3Positions(self):
+    def player3Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i+1):
-                startPositions.append(self.identifierFromCoord((4-j, i)))
-                endPositions.append(self.identifierFromCoord((j-4, -i)))
-        homeBase = self.identifierFromCoord((-4, -4))
+                startPositions.append(board.idFromCoord((4-j, i)))
+                endPositions.append(board.idFromCoord((j-4, -i)))
+        homeBase = board.idFromCoord((-4, -4))
         return (startPositions, endPositions, homeBase)
 
 
-    def initNodes(self):
-        """Create every field, already ordered by id.
+    def buildFields(self):
+        """Return every field, already ordered by id.
 
         The board is a central 9x9 rhombus plus four outward triangles. A
         field's ``id`` is by definition its rank once all fields are ordered by
         ``fieldNumber``, so sorting the coordinates once makes the id fall out
         of ``enumerate`` — no second pass to assign ids, and no ranking scan.
-
-        Everything is rebuilt from scratch: an ``Initializer`` is reused across
-        ``reset()``, so carrying anything over would corrupt every id.
         """
         coords = [(i, j) for i in range(-4, 5) for j in range(-4, 5)]
         for i in range(1, 5):
             for j in range(1, i+1):
                 coords.extend([(-4-j, i), (4+j, -i), (-i, 4+j), (i, -4-j)])
         coords.sort(key=self.fieldNumberFromCoord)
-        self.fields = [
+        return [
             HalmaField(coord, id, self.fieldNumberFromCoord(coord))
             for id, coord in enumerate(coords)
         ]
-        self.idByFieldNumber = {field.fieldNumber: field.id for field in self.fields}
-        self.idByCoord = {field.coord: field.id for field in self.fields}
 
 
     def initEdges(self, board):
         # A neighbour is one direction step away on the 17x17 grid, the jump
-        # landing two. Both only exist if that fieldNumber is on the board,
-        # which idByFieldNumber answers directly.
+        # landing two. Both only exist if that fieldNumber is on the board.
+        # fieldNumber is scaffolding, so this index stays local rather than
+        # becoming state on either object.
+        idByFieldNumber = {field.fieldNumber: field.id for field in board.fields}
         for field in board.fields:
             for (di, dj) in self.DIRECTIONS:
                 neighbour = field.fieldNumber + self.directionMapper(di, dj)
                 jumpNeighbour = field.fieldNumber + self.directionMapper(2*di, 2*dj)
-                if neighbour in self.idByFieldNumber:
-                    field.addNeighbour(self.idByFieldNumber[neighbour])
-                    if jumpNeighbour in self.idByFieldNumber:
-                        field.addJumpNeighbour(self.idByFieldNumber[neighbour],
-                                               self.idByFieldNumber[jumpNeighbour])
+                if neighbour in idByFieldNumber:
+                    field.addNeighbour(idByFieldNumber[neighbour])
+                    if jumpNeighbour in idByFieldNumber:
+                        field.addJumpNeighbour(idByFieldNumber[neighbour],
+                                               idByFieldNumber[jumpNeighbour])
 
 
     def initPermissions(self, board, players):
@@ -125,14 +117,6 @@ class Initializer:
     def fieldNumberFromCoord(self, coord):
         x, y = coord
         return (x+8) + (y+8)*17
-
-
-    def identifierFromFieldNumber(self, fieldNumber):
-        return self.idByFieldNumber[fieldNumber]
-
-
-    def identifierFromCoord(self, coord):
-        return self.idByCoord[coord]
 
 
     def directionMapper(self, di, dj):

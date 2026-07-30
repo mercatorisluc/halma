@@ -77,12 +77,11 @@ def test_reset_can_be_called_repeatedly(game):
     game.play()
     for _ in range(3):
         game.reset()
-        assert len(game.initializer.fields) == 121
         assert len(game.board.fields) == 121
-        # The board and its mapper are reused rather than rebuilt, so they must
-        # be overwritten in place, never appended to.
-        assert len(game.board.fieldPositionsMapper.coordById) == 121
-        assert len(game.board.fieldPositionsMapper.idByCoord) == 121
+        # The board is reused rather than rebuilt, so its fields and coordinate
+        # index must be replaced wholesale, never appended to.
+        assert [f.id for f in game.board.fields] == list(range(121))
+        assert len(game.board.idByCoord) == 121
         assert game.gameLength() == 0
         assert game.winner() is None
         assert all(len(p.positions) == 15 for p in game.players)

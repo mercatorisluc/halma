@@ -48,7 +48,7 @@ consumers**, and only one of them (`visual/`) is something you can see. Check
 121 fields forming a six-pointed star (Chinese-Checkers style). Each field has
 up to six neighbours — two at the star's tips.
 
-`Initializer.initNodes` builds it as a **9×9 rhombus (81 fields) plus four
+`Initializer.buildFields` builds it as a **9×9 rhombus (81 fields) plus four
 ten-field triangles (40)**. Note that this construction does *not* line up with
 the six home regions, which is the confusing part:
 
@@ -66,7 +66,7 @@ players' home bases. A player's target is the star point opposite their start.
 ### Three ways to address a field
 
 This is the main source of confusion in the codebase. Every field carries all
-three; `Initializer` and `FieldPositionsMapper` convert between them.
+three; `HalmaBoard` converts between them.
 
 | Name | Form | Used for |
 |---|---|---|
@@ -75,16 +75,23 @@ three; `Initializer` and `FieldPositionsMapper` convert between them.
 | `fieldNumber` | `(x+8) + (y+8)*17` | internal only — lets `initEdges` find neighbours by offset arithmetic on a 17×17 grid |
 
 `fieldNumber` is scaffolding. It exists so adjacency can be computed as simple
-addition (`directionMapper`) before everything is re-expressed as `id`s, and it
-should not leak into new code.
+addition (`directionMapper`) before everything is re-expressed as `id`s. It
+never becomes state on any object — `initEdges` builds the index it needs as a
+local — and it should not leak into new code.
 
 The three are tied together by one rule worth knowing: **a field's `id` is its
-rank in `fieldNumber` order**. `Initializer.initNodes` builds the fields in that
-order, so the id is just the index and `board.fields[id]` needs no lookup — the
-"fields must be ordered by id" contract on `setFields` is satisfied by
-construction rather than by a later sort. Translations in the other direction
-(`idByFieldNumber`, `idByCoord`, and `FieldPositionsMapper` for the
-coordinate-first callers) are plain dict lookups.
+rank in `fieldNumber` order**. `Initializer.buildFields` builds the fields in
+that order, so the id is just the index — the "fields must be ordered by id"
+contract on `setFields` is satisfied by construction rather than by a later
+sort. That in turn makes `board.coordFromId(id)` a plain `fields[id].coord`
+with no lookup, and only the reverse direction needs an index
+(`board.idFromCoord`, built once in `setFields`).
+
+The board owns that index because it is board data. `Initializer` keeps no
+state at all: it builds fields and hands them over, and when it later needs a
+coordinate translated — placing the players' starting layout — it asks the
+board, the same way `initEdges` and `initPermissions` already take the board as
+a parameter. The dependency only ever points from initializer to board.
 
 ### Field permissions
 

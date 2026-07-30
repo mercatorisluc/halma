@@ -3,32 +3,37 @@ from collections import deque
 import numpy as np
 
 from game.field import HalmaField
-from game.fieldPositionsMapper import FieldPositionsMapper
 
 
 class HalmaBoard:
     """The 121-field star board: piece placement, move generation and the
     heuristic scoring functions used by the bots.
 
-    Fields are addressed by integer id (0-120); ``fieldPositionsMapper`` maps
-    between ids and axial coordinates. ``distanceMatrix`` caches the board
-    distance between every pair of fields.
+    Fields are addressed by integer id (0-120) and are stored in id order, so
+    ``fields[id]`` is the field itself and ``coordFromId`` needs no lookup.
+    ``idFromCoord`` is the reverse index, for the callers that start from a
+    coordinate. ``distanceMatrix`` caches the board distance between every pair
+    of fields.
     """
 
     def __init__(self):
         self.fields: list[HalmaField] = []
-        self.fieldPositionsMapper = FieldPositionsMapper()
+        self.idByCoord = {}
         self.distanceMatrix = [[0 for _ in range(121)] for _ in range(121)]
-
-
-    def setFieldPositionsMapper(self, fieldPositionsList):
-        for fieldPosition in fieldPositionsList:
-            self.fieldPositionsMapper.addFieldPosition(fieldPosition)
 
 
     def setFields(self, fields):
         # fields must be ordered by id (index i holds the field with id i).
         self.fields = fields
+        self.idByCoord = {field.coord: field.id for field in fields}
+
+
+    def coordFromId(self, id):
+        return self.fields[id].coord
+
+
+    def idFromCoord(self, coord):
+        return self.idByCoord[coord]
 
 
     def calculateDistanceMatrix(self):

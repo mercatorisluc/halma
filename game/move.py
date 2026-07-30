@@ -72,7 +72,7 @@ class Move:
             if board.isJumpMove(start, end):
                 coordX = (board.fields[start].coord[0] + board.fields[end].coord[0]) / 2
                 coordY = (board.fields[start].coord[1] + board.fields[end].coord[1]) / 2
-                id = board.fieldPositionsMapper.idFromCoord((coordX, coordY))
+                id = board.idFromCoord((coordX, coordY))
                 self.jumpedOvers.append(id)
 
     def fullStepsList(self):

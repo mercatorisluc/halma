@@ -37,8 +37,8 @@ class BoardProjector:
             idA = field.id
             idEdges.extend([(idA, idB) for idB in field.neighbours if (idB, idA) not in idEdges])
         for edge in idEdges:
-            coordA = board.fieldPositionsMapper.coordFromId(edge[0])
-            coordB = board.fieldPositionsMapper.coordFromId(edge[1])
+            coordA = board.coordFromId(edge[0])
+            coordB = board.coordFromId(edge[1])
             self.edges.append((self.visualPosition(coordA), self.visualPosition(coordB)))
 
     def xyPositions(self, coords):
@@ -59,7 +59,7 @@ class BoardProjector:
         for pos in self.coordToPos[self.flipAngle].values():
             dist = math.hypot(pos[0] - clickPos[0], pos[1] - clickPos[1])
             if dist <= radius:
-                id = board.fieldPositionsMapper.idFromCoord(self.visualCoord(pos))
+                id = board.idFromCoord(self.visualCoord(pos))
                 return board.fields[id]
 
     def flipBoardByDegree(self, degrees):
