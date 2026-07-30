@@ -20,7 +20,7 @@ class HalmaGame:
 
     def __init__(self):
         self.initializer = Initializer()
-        self.board = None
+        self.board: HalmaBoard = HalmaBoard()
         self.players = []
         self.playOrder = []
         self.moves = []
@@ -36,6 +36,11 @@ class HalmaGame:
     def initBoard(self):
         self.board = HalmaBoard()
         self.initializer.initBoard(self.board)
+
+
+    def initStandardGame(self):
+        # Subclasses seat their own players (bots and/or a human).
+        raise NotImplementedError
 
 
     def reset(self):
