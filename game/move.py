@@ -15,7 +15,9 @@ class Move:
         self.start = self.steps[0]
         self.end = self.steps[-1]
         self.player = player
-        self.jumpedOvers = None
+        # Only known once reconstructFullMove has run; ``None`` is what
+        # needsReconstruction reports on, so it must not start as [].
+        self.jumpedOvers: list[int] | None = None
 
 
     def partMoves(self):
@@ -75,14 +77,18 @@ class Move:
 
     def fullStepsList(self):
         """Flatten the move into an alternating list
-        ``[start, over, land, over, land, ..., end]`` for drawing the path."""
-        fullStepsList = []
-        fullStepsList.append(self.start)
-        substeps = list(self.steps)
-        substeps.pop(0)
-        substeps.pop(-1)
-        for i in range(len(self.jumpedOvers)):
-            fullStepsList.append(self.jumpedOvers[i])
+        ``[start, over, land, over, land, ..., end]`` for drawing the path.
+
+        :meth:`reconstructFullMove` must have run first — the jumped-over
+        fields are not known before that.
+        """
+        if self.jumpedOvers is None:
+            raise RuntimeError(
+                "fullStepsList() needs reconstructFullMove() to have run first")
+        fullStepsList = [self.start]
+        substeps = list(self.steps)[1:-1]
+        for i, jumpedOver in enumerate(self.jumpedOvers):
+            fullStepsList.append(jumpedOver)
             if i < len(substeps):
                 fullStepsList.append(substeps[i])
         fullStepsList.append(self.end)

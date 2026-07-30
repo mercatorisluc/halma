@@ -1,5 +1,7 @@
 """Characterization tests for move recording and jump-move reconstruction."""
 
+import pytest
+
 from game.move import Move
 
 
@@ -33,6 +35,17 @@ def test_single_step_move_needs_no_reconstruction(board, game):
     move.reconstructFullMove(board)
     assert move.jumpedOvers == []
     assert move.fullStepsList() == [start, end]
+
+
+def test_full_steps_list_refuses_to_run_before_reconstruction(game):
+    # jumpedOvers is None until reconstructFullMove fills it in, so the flat
+    # path cannot be built yet. Both renderer call sites reconstruct first;
+    # this pins the contract so a future caller gets a clear error instead of
+    # "object of type 'NoneType' has no len()".
+    move = Move([0, 1], game.players[0])
+    assert move.needsReconstruction() is True
+    with pytest.raises(RuntimeError, match="reconstructFullMove"):
+        move.fullStepsList()
 
 
 def test_double_jump_reconstruction(board, game):
