@@ -13,18 +13,19 @@ class HalmaBoard:
     """
 
     def __init__(self):
-        self.fields = [None] * 121
+        self.fields: list[HalmaField] = []
         self.fieldPositionsMapper = FieldPositionsMapper()
         self.distanceMatrix = [[0 for _ in range(121)] for _ in range(121)]
-        
-        
+
+
     def setFieldPositionsMapper(self, fieldPositionsList):
         for fieldPosition in fieldPositionsList:
             self.fieldPositionsMapper.addFieldPosition(fieldPosition)
-        
-        
-    def setField(self, coord, id, fieldNumber):
-        self.fields[id] = HalmaField(coord, id, fieldNumber)
+
+
+    def setFields(self, fields):
+        # fields must be ordered by id (index i holds the field with id i).
+        self.fields = fields
         
         
     def calculateDistanceMatrix(self):

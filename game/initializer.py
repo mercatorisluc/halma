@@ -1,3 +1,6 @@
+from game.field import HalmaField
+
+
 class Initializer:
     """Builds the star board and the players' starting layout.
 
@@ -18,11 +21,10 @@ class Initializer:
         """Create every field, wire up neighbours/jumps, and cache distances."""
         self.initNodes()
         board.setFieldPositionsMapper(self.fields)
-        for field in self.fields:
-            coord = field["coord"]
-            id = field["id"]
-            fieldNumber = field["fieldNumber"]
-            board.setField(coord, id, fieldNumber)
+        board.setFields([
+            HalmaField(f["coord"], f["id"], f["fieldNumber"])
+            for f in sorted(self.fields, key=lambda f: f["id"])
+        ])
         self.initEdges(board)
         board.calculateDistanceMatrix()
         
