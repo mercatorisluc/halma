@@ -39,6 +39,7 @@ def test_potential_jump_score(board, player):
 # by applying and then reversing it, and the playback controller steps the
 # history backwards the same way.
 
+
 def test_distance_score_is_restored_by_reversing_a_move(board, player):
     before = player.distanceScore
     for move in sorted(board.allValidMoves(player)):

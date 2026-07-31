@@ -32,36 +32,32 @@ class Initializer:
         self.initEdges(board)
         board.calculateDistanceMatrix()
 
-
     def player1Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
-            for j in range(i+1):
-                startPositions.append(board.idFromCoord((i, -4-j)))
-                endPositions.append(board.idFromCoord((-i, 4+j)))
+            for j in range(i + 1):
+                startPositions.append(board.idFromCoord((i, -4 - j)))
+                endPositions.append(board.idFromCoord((-i, 4 + j)))
         homeBase = board.idFromCoord((-4, 8))
         return (startPositions, endPositions, homeBase)
-
 
     def player2Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
-            for j in range(i+1):
-                startPositions.append(board.idFromCoord((-4-j, i)))
-                endPositions.append(board.idFromCoord((4+j, -i)))
+            for j in range(i + 1):
+                startPositions.append(board.idFromCoord((-4 - j, i)))
+                endPositions.append(board.idFromCoord((4 + j, -i)))
         homeBase = board.idFromCoord((8, -4))
         return (startPositions, endPositions, homeBase)
-
 
     def player3Positions(self, board):
         startPositions, endPositions = [], []
         for i in range(5):
-            for j in range(i+1):
-                startPositions.append(board.idFromCoord((4-j, i)))
-                endPositions.append(board.idFromCoord((j-4, -i)))
+            for j in range(i + 1):
+                startPositions.append(board.idFromCoord((4 - j, i)))
+                endPositions.append(board.idFromCoord((j - 4, -i)))
         homeBase = board.idFromCoord((-4, -4))
         return (startPositions, endPositions, homeBase)
-
 
     def buildFields(self):
         """Return every field, already ordered by id.
@@ -73,11 +69,10 @@ class Initializer:
         """
         coords = [(i, j) for i in range(-4, 5) for j in range(-4, 5)]
         for i in range(1, 5):
-            for j in range(1, i+1):
-                coords.extend([(-4-j, i), (4+j, -i), (-i, 4+j), (i, -4-j)])
+            for j in range(1, i + 1):
+                coords.extend([(-4 - j, i), (4 + j, -i), (-i, 4 + j), (i, -4 - j)])
         coords.sort(key=self.fieldNumberFromCoord)
         return [HalmaField(coord, id) for id, coord in enumerate(coords)]
-
 
     def initEdges(self, board):
         # A neighbour is one direction step away on the 17x17 grid, the jump
@@ -87,15 +82,15 @@ class Initializer:
         fieldNumbers = {field.id: self.fieldNumberFromCoord(field.coord) for field in board.fields}
         idByFieldNumber = {number: id for id, number in fieldNumbers.items()}
         for field in board.fields:
-            for (di, dj) in self.DIRECTIONS:
+            for di, dj in self.DIRECTIONS:
                 neighbour = fieldNumbers[field.id] + self.directionMapper(di, dj)
-                jumpNeighbour = fieldNumbers[field.id] + self.directionMapper(2*di, 2*dj)
+                jumpNeighbour = fieldNumbers[field.id] + self.directionMapper(2 * di, 2 * dj)
                 if neighbour in idByFieldNumber:
                     field.addNeighbour(idByFieldNumber[neighbour])
                     if jumpNeighbour in idByFieldNumber:
-                        field.addJumpNeighbour(idByFieldNumber[neighbour],
-                                               idByFieldNumber[jumpNeighbour])
-
+                        field.addJumpNeighbour(
+                            idByFieldNumber[neighbour], idByFieldNumber[jumpNeighbour]
+                        )
 
     def initPermissions(self, board, players):
         # A field surrounded entirely by one player's start/end cells belongs
@@ -115,11 +110,9 @@ class Initializer:
             if not field.permissions:
                 field.setPermissions(players)
 
-
     def fieldNumberFromCoord(self, coord):
         x, y = coord
-        return (x+8) + (y+8)*17
-
+        return (x + 8) + (y + 8) * 17
 
     def directionMapper(self, di, dj):
         return di + 17 * dj

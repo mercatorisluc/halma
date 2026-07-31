@@ -23,15 +23,24 @@ pytest tests/test_moves.py::test_is_jump_move
 # Lint (must stay clean)
 ruff check .
 ruff check . --fix
+
+# Format (must stay clean)
+ruff format .
+ruff format --check .
 ```
 
-`pytest` and `ruff check .` are the two CI-relevant commands; there is no build
-step and no type checking. The ruff rule set is pinned explicitly in `ruff.toml`
-rather than left to ruff's shifting defaults. Note that `N` (pep8-naming) is
-deliberately **not** enabled: this project uses camelCase throughout, which is
-un-pythonic but consistent, and enabling `N` would flag ~300 violations and
-invite a rename touching every file for no functional gain. Match the
-surrounding camelCase in new code.
+`pytest`, `ruff check .` and `ruff format --check .` are the CI-relevant
+commands; there is no build step and no type checking. Both the rule set and the
+formatter settings are pinned in `ruff.toml` rather than left to ruff's shifting
+defaults.
+
+Layout is the formatter's decision — do not hand-tune blank lines, quotes or
+line breaks, and run `ruff format .` before committing. Naming is the one thing
+the tooling does not enforce: `N` (pep8-naming) is deliberately **not** enabled,
+because this project uses camelCase throughout. That is un-pythonic but
+consistent, and enabling `N` would flag ~300 violations and invite a rename
+touching every file for no functional gain. Match the surrounding camelCase in
+new code.
 
 ## Architecture
 

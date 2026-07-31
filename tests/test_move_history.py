@@ -29,8 +29,9 @@ def test_single_step_move_needs_no_reconstruction(board, game):
     # Pick a genuine single-neighbour step (not a jump): from the packed
     # start, several legal moves are jumps into the empty centre, so we must
     # select one whose destination is a direct neighbour.
-    start, end = next((s, e) for s, e in board.allValidMoves(player)
-                      if e in board.fields[s].neighbours)
+    start, end = next(
+        (s, e) for s, e in board.allValidMoves(player) if e in board.fields[s].neighbours
+    )
     move = Move([start, end], player)
     move.reconstructFullMove(board)
     assert move.jumpedOvers == []

@@ -1,9 +1,16 @@
-# Ruff configuration. Run with:  ruff check .   /   ruff check . --fix
+# Ruff configuration.
+#   ruff check .     lint      (--fix to apply)
+#   ruff format .    formatting (--check to verify only)
 #
 # The rule set is chosen explicitly rather than left to ruff's defaults, which
-# shift between releases.
+# shift between releases. Layout is the formatter's job, not a matter of taste
+# per file -- it settled a split where game/ used two blank lines between
+# methods and visual/ used one.
 
 line-length = 100
+
+[format]
+quote-style = "double"
 
 [lint]
 select = [

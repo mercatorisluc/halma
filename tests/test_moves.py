@@ -42,8 +42,7 @@ def test_apply_then_reverse_restores_the_board(board, game):
 
 def test_is_jump_move(board, game):
     player = game.players[0]
-    start = next(f.id for f in board.fields
-                 if f.playerID == player.identifier and f.neighbours)
+    start = next(f.id for f in board.fields if f.playerID == player.identifier and f.neighbours)
     neighbour = board.fields[start].neighbours[0]
     assert board.isJumpMove(start, neighbour) is False
 

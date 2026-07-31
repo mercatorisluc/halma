@@ -5,22 +5,18 @@ class Strategy:
     def __init__(self, strategyName):
         self.strategyName = strategyName
 
-
     def advancedDist(self, board, player):
         distanceScore = board.advancedDistanceScore(player)
         homeBonus = board.homeBonusScore(player)
         return (distanceScore + homeBonus) / 2
-
 
     def simpleDist(self, board, player):
         distanceScore = board.simpleDistanceScore(player)
         homeBonus = board.homeBonusScore(player)
         return (distanceScore + homeBonus) / 2
 
-
     def chooseRandom(self, board, player):
         return 1
-
 
     def sparsity(self, board, player):
         distanceScore = board.advancedDistanceScore(player)
@@ -30,17 +26,15 @@ class Strategy:
         homeBonus = board.homeBonusScore(player)
         return distanceScore + sparsityScore + playerSparsityScore + jumpScore + homeBonus
 
-
     def scoringFunction(self, board, player):
         strategy_map = {
             "advancedDistScore": self.advancedDist,
             "sparsityScore": self.sparsity,
             "simpleDistScore": self.simpleDist,
-            "random": self.chooseRandom
+            "random": self.chooseRandom,
         }
         score = strategy_map.get(self.strategyName)
         return score(board, player)
-
 
     def bestMove(self, moves, board, player):
         """Pick a lowest-scoring move, breaking ties at random.

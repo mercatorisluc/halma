@@ -4,6 +4,7 @@ Placing this file at the project root makes pytest add the root to ``sys.path``
 (``prepend`` import mode), so tests can ``import game.board`` etc. the same way
 ``main.py`` does when run from the project root.
 """
+
 import pytest
 
 from game.gameManager import ComputedGame
