@@ -4,5 +4,5 @@
   "venvPath": ".",
   "venv": ".venv",
   "reportMissingTypeStubs": "none",
-  "exclude": ["**/node_modules", "**/__pycache__", "**/.*", "models", "env"]
+  "exclude": [".venv", "**/node_modules", "**/__pycache__", "**/.*", "models"]
 }

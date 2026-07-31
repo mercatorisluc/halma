@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -59,4 +58,4 @@ class Strategy:
             with board.moveApplied(move, player):
                 scored.append((self.scoringFunction(board, player), move))
         minValue = min(score for score, _ in scored)
-        return random.choice([move for score, move in scored if score == minValue])
+        return player.rng.choice([move for score, move in scored if score == minValue])

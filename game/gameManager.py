@@ -24,9 +24,17 @@ class HalmaGame:
     def __init__(self) -> None:
         self.initializer = Initializer()
         self.board: HalmaBoard = HalmaBoard()
+        # Owned here so a whole game is reproducible from one seed. The
+        # global random module is deliberately not used: several environments
+        # train in parallel and would reseed each other.
+        self.rng = random.Random()
         self.players: list[HalmaPlayer] = []
         self.playOrder: list[HalmaPlayer] = []
         self.moves: list[Move] = []
+
+    def seed(self, seed: int | None) -> None:
+        """Make play order and the bots' tie-breaking reproducible."""
+        self.rng.seed(seed)
 
     def initGame(self, players: list[HalmaPlayer]) -> None:
         self.initializer.initializeBoard(self.board)
@@ -52,6 +60,7 @@ class HalmaGame:
             self.setPlayerPositions(players[2], self.initializer.player3Positions(self.board))
         for player in players:
             self.players.append(player)
+            player.rng = self.rng
             player.prepareForGameStart(self.board)
         self.computePlayersOrder()
 
@@ -64,7 +73,7 @@ class HalmaGame:
         player.setHomeBase(homeBase)
 
     def computePlayersOrder(self) -> None:
-        self.playOrder = random.sample(self.players, k=len(self.players))
+        self.playOrder = self.rng.sample(self.players, k=len(self.players))
 
     def gameLength(self) -> int:
         return len(self.moves)

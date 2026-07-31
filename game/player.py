@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING
 
 from game.boardTypes import AnyMove, FieldId, MovePath, PlayerId
@@ -27,6 +28,9 @@ class HalmaPlayer:
         self.nonArrived: set[FieldId] = set()
         self.homeBase: FieldId | None = None
         self.distanceScore = 0
+        # Replaced with the game's generator when seated, so one seed
+        # reproduces a whole game.
+        self.rng = random.Random()
 
     def setHomeBase(self, position: FieldId) -> None:
         self.homeBase = position
