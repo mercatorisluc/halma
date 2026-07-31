@@ -20,10 +20,8 @@ class HalmaPlayer:
         self.homeBase = None
         self.distanceScore = 0
 
-
     def setHomeBase(self, position):
         self.homeBase = position
-
 
     def prepareForGameStart(self, board):
         for id in self.startPositions:
@@ -32,7 +30,6 @@ class HalmaPlayer:
         self.nonArrived = self.positions - self.endPositions
         self.openEndPositions = self.endPositions - self.positions
         self.distanceScore = board.calculatePlayerDistanceScore(self)
-
 
     def updatePositionWithMove(self, move):
         start, end = move[0], move[-1]
@@ -45,25 +42,18 @@ class HalmaPlayer:
         self.nonArrived.discard(start)
         self.nonArrived -= self.endPositions
 
-
     def isWinning(self):
-        return (self.positions == self.endPositions)
-
+        return self.positions == self.endPositions
 
     def setStartPositions(self, positions):
         self.startPositions = set(positions)
-
 
     def setEndPositions(self, positions):
         self.endPositions = set(positions)
 
 
-
 class HumanPlayer(HalmaPlayer):
     """A player whose moves come from the visualization's click handling."""
-
-    def __init__(self, identifier):
-        super().__init__(identifier)
 
     def isHuman(self):
         return True

@@ -19,14 +19,11 @@ class Move:
         # needsReconstruction reports on, so it must not start as [].
         self.jumpedOvers: list[int] | None = None
 
-
     def partMoves(self):
-        return [(self.steps[i], self.steps[i+1]) for i in range(len(self.steps)-1)]
-
+        return [(self.steps[i], self.steps[i + 1]) for i in range(len(self.steps) - 1)]
 
     def needsReconstruction(self):
         return self.jumpedOvers is None
-
 
     def reconstructFullMove(self, board):
         """Recover the full jump path for a move stored as just start/end.
@@ -43,27 +40,24 @@ class Move:
         if not board.isJumpMove(startField, endField):
             self.jumpedOvers = []
             return
-        else:
-            queue = deque([[startField]])
-            validMoves = []
-            visited = set()
-            visited.add(startField)
-            while queue:
-                tempWay = queue.popleft()
-                jumpPositions = board.getValidJumpFields(tempWay[-1])
-                for jumpPosition in jumpPositions:
-                    if jumpPosition == endField:
-                        validMoves.append([*tempWay, endField])
-                    elif jumpPosition not in visited:
-                        visited.add(jumpPosition)
-                        queue.append([*tempWay, jumpPosition])
-            assert len(validMoves) > 0
-            move = min(validMoves, key=len)
-            if board.fields[self.start].isEmpty():
-                move.reverse()
-            self.steps = move
-            self.calculateJumpedOverFields(board)
 
+        queue = deque([[startField]])
+        validMoves = []
+        visited = {startField}
+        while queue:
+            tempWay = queue.popleft()
+            for jumpPosition in board.getValidJumpFields(tempWay[-1]):
+                if jumpPosition == endField:
+                    validMoves.append([*tempWay, endField])
+                elif jumpPosition not in visited:
+                    visited.add(jumpPosition)
+                    queue.append([*tempWay, jumpPosition])
+        assert len(validMoves) > 0
+        move = min(validMoves, key=len)
+        if board.fields[self.start].isEmpty():
+            move.reverse()
+        self.steps = move
+        self.calculateJumpedOverFields(board)
 
     def calculateJumpedOverFields(self, board):
         self.jumpedOvers = []
@@ -83,8 +77,7 @@ class Move:
         fields are not known before that.
         """
         if self.jumpedOvers is None:
-            raise RuntimeError(
-                "fullStepsList() needs reconstructFullMove() to have run first")
+            raise RuntimeError("fullStepsList() needs reconstructFullMove() to have run first")
         fullStepsList = [self.start]
         substeps = list(self.steps)[1:-1]
         for i, jumpedOver in enumerate(self.jumpedOvers):

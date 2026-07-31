@@ -20,7 +20,7 @@ class BoardRenderer:
         self.screen.fill(self.colorizer.white())
         self.drawHomeBases()
         self.drawEdges()
-        self.drawFields(board.fields, 'S')
+        self.drawFields(board.fields, "S")
 
     def drawEdges(self):
         for edge in self.projector.edges:
@@ -47,16 +47,16 @@ class BoardRenderer:
 
     def drawField(self, field, flag):
         x, y = self.projector.visualPosition(field.coord)
-        fillColor = self.colorizer.playerColorsDict[field.playerID]
-        if flag == 'S':
+        fillColor = self.colorizer.playerColor(field.playerID)
+        if flag == "S":
             self.drawCircle((x, y), fillColor, 11, True)
-        elif flag == 'M':
+        elif flag == "M":
             self.drawCircle((x, y), self.colorizer.colorForFlag(flag), 13, False)
             self.drawCircle((x, y), fillColor, 11, True)
-        elif flag == 'C':
+        elif flag == "C":
             self.drawCircle((x, y), self.colorizer.colorForFlag(flag), 14, False)
             self.drawCircle((x, y), fillColor, 11, True)
-        elif flag == 'P':
+        elif flag == "P":
             self.drawCircle((x, y), self.colorizer.colorForFlag(flag), 13, False)
             self.drawCircle((x, y), fillColor, 11, True)
 
@@ -72,25 +72,26 @@ class BoardRenderer:
         proj = [self.projector.visualPosition(board.fields[id].coord) for id in move]
         for i in range(len(proj) - 1):
             pygame.draw.line(
-                self.screen, self.colorizer.colorForFlag(flag), proj[i], proj[i + 1], 6)
+                self.screen, self.colorizer.colorForFlag(flag), proj[i], proj[i + 1], 6
+            )
         self.drawFields([board.fields[id] for id in move], flag)
 
     def drawValidMoves(self, start, validHumanMoves):
-        for move in validHumanMoves:
-            if move[0] == start:
-                move = self.game.createMoveForPlayer(move, self.game.currentPlayer())
+        for way in validHumanMoves:
+            if way[0] == start:
+                move = self.game.createMoveForPlayer(way, self.game.currentPlayer())
                 move.reconstructFullMove(self.game.board)
-                self.drawMove(move.fullStepsList(), 'P')
+                self.drawMove(move.fullStepsList(), "P")
 
     def drawLastMove(self, moveTraveler):
         if moveTraveler >= 1:
             if self.game.moves[moveTraveler - 1].needsReconstruction():
                 self.game.moves[moveTraveler - 1].reconstructFullMove(self.game.board)
             move = self.game.moves[moveTraveler - 1]
-            self.drawMove(move.fullStepsList(), 'M')
+            self.drawMove(move.fullStepsList(), "M")
 
     def drawInteractiveElements(self, clickedField, waitingForHumanMove, validHumanMoves):
         if clickedField is not None:
-            self.drawField(clickedField, 'C')
+            self.drawField(clickedField, "C")
             if waitingForHumanMove:
                 self.drawValidMoves(clickedField.id, validHumanMoves)

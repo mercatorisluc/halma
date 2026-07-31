@@ -3,8 +3,19 @@ from collections import defaultdict
 
 class BoardColorizer:
     """Colour palette for the visualization: named base colours, per-player
-    piece colours, home-base background tints, and the highlight colour used
-    for each draw flag (selected / last move / clicked / preview)."""
+    piece colours and home-base background tints.
+
+    Drawing is driven by a single-letter flag saying *why* a field is being
+    drawn:
+
+    - ``'S'`` — plain, every field of the board
+    - ``'M'`` — part of the last move played
+    - ``'C'`` — the field the human just clicked
+    - ``'P'`` — preview of a move the human could make from there
+
+    Only the last three are highlighted; ``'S'`` fields are drawn in the
+    occupying player's colour and never reach :meth:`colorForFlag`.
+    """
 
     def __init__(self):
         self.WHITE = (255, 255, 255)
@@ -15,34 +26,29 @@ class BoardColorizer:
         self.playerColorsDict = defaultdict(lambda: self.GREY)
         self.backgroundColors = [(239, 154, 154), (129, 212, 250), (165, 214, 167)]
 
-
     def setPlayerWithColors(self, playerID, color):
         self.playerColorsDict[playerID] = color
-
 
     def playerColor(self, playerID):
         return self.playerColorsDict[playerID]
 
-
     def colorForFlag(self, flag):
-        if flag == 'M':
+        """Highlight colour for a draw flag, or ``None`` for one that needs no
+        highlight."""
+        if flag == "M":
             return self.moveHighlighting()
-        elif (flag == 'P') or (flag == 'C'):
+        if flag in ("P", "C"):
             return self.clickHighlighting()
-
+        return None
 
     def moveHighlighting(self):
         return self.VIOLET
 
-
     def clickHighlighting(self):
         return self.YELLOW
-
 
     def black(self):
         return self.BLACK
 
-
     def white(self):
         return self.WHITE
-

@@ -22,35 +22,28 @@ class HalmaBoard:
         self.idByCoord = {}
         self.distanceMatrix = []
 
-
     def setFields(self, fields):
         # fields must be ordered by id (index i holds the field with id i).
         self.fields = fields
         self.idByCoord = {field.coord: field.id for field in fields}
 
-
     def coordFromId(self, id):
         return self.fields[id].coord
 
-
     def idFromCoord(self, coord):
         return self.idByCoord[coord]
-
 
     def calculateDistanceMatrix(self):
         # fields are ordered by id, so index == id and no lookup is needed.
         coords = [field.coord for field in self.fields]
         self.distanceMatrix = [[self.distance(a, b) for b in coords] for a in coords]
 
-
     def placePiece(self, id, playerID):
         self.fields[id].playerID = playerID
-
 
     def removePiece(self, id):
         assert self.fields[id].playerID != 0
         self.fields[id].removePlayer()
-
 
     def applyMoveForPlayer(self, move, player):
         start, end = move[0], move[-1]
@@ -58,7 +51,6 @@ class HalmaBoard:
         self.removePiece(start)
         player.updatePositionWithMove(move)
         self.updatePlayerDistanceScore(player, move)
-
 
     @contextmanager
     def moveApplied(self, move, player):
@@ -79,28 +71,20 @@ class HalmaBoard:
         finally:
             self.applyMoveForPlayer((move[-1], move[0]), player)
 
-
     def getValidNeighbourFields(self, id):
-        movePositions = []
-        for neighbour in self.fields[id].neighbours:
-            if self.fields[neighbour].playerID == 0:
-                movePositions.append(neighbour)
-        return movePositions
-
+        """Empty fields one step away — the destinations of a single step."""
+        return [n for n in self.fields[id].neighbours if self.fields[n].isEmpty()]
 
     def getValidJumpFields(self, id):
-        movePositions = []
-        for neighbour in self.fields[id].jumpNeighbours:
-            if (self.fields[neighbour].playerID != 0):
-                jumpNeighbour = self.fields[id].jumpNeighbours[neighbour]
-                if self.fields[jumpNeighbour].playerID == 0:
-                    movePositions.append(jumpNeighbour)
-        return movePositions
-
+        """Landing fields of a single jump: something to hop over, empty behind."""
+        return [
+            landing
+            for jumpedOver, landing in self.fields[id].jumpNeighbours.items()
+            if not self.fields[jumpedOver].isEmpty() and self.fields[landing].isEmpty()
+        ]
 
     def isJumpMove(self, start, end):
-        return (end not in self.fields[start].neighbours)
-
+        return end not in self.fields[start].neighbours
 
     def allValidMoves(self, player):
         """All legal moves for ``player`` as ``(start, end)`` id pairs.
@@ -110,7 +94,6 @@ class HalmaBoard:
         and :class:`~game.move.Move` need.
         """
         return [(way[0], way[-1]) for way in self.allValidMovesWithWay(player)]
-
 
     def allValidMovesWithWay(self, player):
         """All legal moves for ``player`` as full paths ``[start, ..., end]``.
@@ -141,7 +124,6 @@ class HalmaBoard:
             allMoves.extend(moves)
         return [move for move in allMoves if self.fields[move[-1]].allows(player)]
 
-
     def distance(self, coordA, coordB):
         """Board distance between two axial hex coordinates.
 
@@ -157,7 +139,6 @@ class HalmaBoard:
             distanceScore += abs(verticalDist) + abs(horizontalDist)
         return distanceScore
 
-
     def simpleDistanceScore(self, player):
         # Total distance of the player's pieces from their own home base;
         # lower is better (pieces have advanced further). Scaled by 16.
@@ -165,9 +146,8 @@ class HalmaBoard:
         score = 0
         for id in player.positions:
             score += self.distanceMatrix[id][hb]
-        #scaling factor of 16
-        return score/16
-
+        # scaling factor of 16
+        return score / 16
 
     def calculatePlayerDistanceScore(self, player):
         score = 0
@@ -175,19 +155,16 @@ class HalmaBoard:
             score += sum([self.distanceMatrix[x][y] for y in player.openEndPositions])
         return score
 
-
     def playerDistanceScore(self, player):
         score = player.distanceScore
-        score /=  max((len(player.nonArrived) * len(player.openEndPositions)), 1)
-        #scaling factor of 12
-        return score/12
-
+        score /= max((len(player.nonArrived) * len(player.openEndPositions)), 1)
+        # scaling factor of 12
+        return score / 12
 
     def advancedDistanceScore(self, player):
         # Blend of the cached distance-to-open-targets score and the simple
         # distance-to-home score; lower is better.
         return ((self.playerDistanceScore(player)) + (self.simpleDistanceScore(player))) / 2
-
 
     def updatePlayerDistanceScore(self, player, move):
         # Incrementally maintain player.distanceScore after a move instead of
@@ -204,14 +181,13 @@ class HalmaBoard:
             toSubtract += sum([self.distanceMatrix[x][end] for x in player.nonArrived])
         else:
             toAdd += sum([self.distanceMatrix[x][end] for x in player.openEndPositions])
-        #missed
+        # missed
         if (start in player.endPositions) and (end not in player.endPositions):
             toSubtract += self.distanceMatrix[start][end]
-        #missed
+        # missed
         if (start not in player.endPositions) and (end in player.endPositions):
             toSubtract += self.distanceMatrix[start][end]
-        player.distanceScore +=  (toAdd - toSubtract)
-
+        player.distanceScore += toAdd - toSubtract
 
     def sparsityScore(self, player):
         # Rewards keeping pieces loosely clustered: penalises each piece by how
@@ -224,9 +200,8 @@ class HalmaBoard:
             for neighbour in neighbours:
                 if not self.fields[neighbour].isEmpty():
                     idScore += 1
-            score += 4/3 * abs(0.75 - (idScore / len(neighbours)))
-        return score/len(player.positions)
-
+            score += 4 / 3 * abs(0.75 - (idScore / len(neighbours)))
+        return score / len(player.positions)
 
     def playerSparsityScore(self, player):
         # How far the most trailing piece lags behind the group: the largest
@@ -235,8 +210,7 @@ class HalmaBoard:
         distances = [self.distanceMatrix[p][player.homeBase] for p in player.positions]
         meanDist = np.mean(distances)
         maxDeviation = max(d - meanDist for d in distances)
-        return maxDeviation/12
-
+        return maxDeviation / 12
 
     def potentialJumpScore(self, player):
         # Rewards positions that have available jumps (a piece to hop over onto
@@ -249,17 +223,13 @@ class HalmaBoard:
             for jumpOver, jumpOn in jumpNeighbours.items():
                 if (not self.fields[jumpOver].isEmpty()) and (self.fields[jumpOn].isEmpty()):
                     idScore += 1
-            score += (1 - idScore/len(jumpNeighbours))
-        return score/len(player.positions)
-
+            score += 1 - idScore / len(jumpNeighbours)
+        return score / len(player.positions)
 
     def homeBonusScore(self, player):
         # Fraction of target fields NOT yet occupied by the player; lower is
         # better (0 once every piece is home).
-        return 1 - len(player.positions & player.endPositions)/len(player.endPositions)
-
+        return 1 - len(player.positions & player.endPositions) / len(player.endPositions)
 
     def boardState(self):
         return np.array([field.playerID for field in self.fields])
-
-

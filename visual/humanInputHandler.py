@@ -15,7 +15,13 @@ class HumanInputHandler:
         self.humanMove = None
         self.validHumanMoves = None
 
-    def humanMoveIsOkay(self):
+    def matchingValidMove(self):
+        """The full-path move whose endpoints match the clicked pair, if legal.
+
+        The click gives only ``(start, end)``; playing it needs the whole jump
+        path, so the pair is looked up among the legal moves rather than
+        merely validated.
+        """
         start, end = self.humanMove
         for move in self.validHumanMoves:
             if (start == move[0]) and (end == move[-1]):
@@ -32,17 +38,14 @@ class HumanInputHandler:
             self.validHumanMoves = None
 
     def handleHumanMove(self, halmaGame):
-        move = self.humanMove
-        if move:
-            chosenMove = self.humanMoveIsOkay()
-            if chosenMove:
-                player = halmaGame.currentPlayer()
-                halmaGame.playMove(player, chosenMove)
-                self.playback.moveTraveler += 1
-                self.humanMove = None
-                self.clickedField = None
-            else:
-                self.humanMove = None
+        if not self.humanMove:
+            return
+        chosenMove = self.matchingValidMove()
+        self.humanMove = None
+        if chosenMove:
+            halmaGame.playMove(halmaGame.currentPlayer(), chosenMove)
+            self.playback.moveTraveler += 1
+            self.clickedField = None
 
     def handleClickedField(self, clicked):
         if clicked is None:
@@ -50,11 +53,9 @@ class HumanInputHandler:
             return
         if self.clickedField is None:
             self.clickedField = clicked
+        elif self.waitingForHumanMove:
+            # Second click completes the pair: from the held field to this one.
+            self.humanMove = (self.clickedField.id, clicked.id)
+            self.clickedField = None
         else:
-            if self.waitingForHumanMove:
-                start = self.clickedField.id
-                end = clicked.id
-                self.humanMove = (start, end)
-                self.clickedField = None
-            else:
-                self.clickedField = clicked
+            self.clickedField = clicked
