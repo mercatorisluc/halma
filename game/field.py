@@ -1,9 +1,19 @@
 class HalmaField:
+    """One field of the board: who stands on it, what it borders, who may enter.
 
-    def __init__(self, coord, id=0, fieldNumber=None):
+    Addressed by ``id`` — that is what ``neighbours``, ``jumpNeighbours`` and
+    every move are expressed in. ``coord`` is kept because geometry is still
+    needed at play time: drawing and click hit-testing, the board distances,
+    the RL symmetry permutations, and finding the field a jump passed over.
+
+    There is deliberately no ``fieldNumber``. That third addressing scheme
+    exists only to derive adjacency while the board is being built, and
+    ``Initializer`` computes it from ``coord`` where it needs it.
+    """
+
+    def __init__(self, coord, id):
         self.coord = coord
         self.id = id
-        self.fieldNumber = fieldNumber
         self.playerID = 0
         self.neighbours = []
         self.jumpNeighbours = {}

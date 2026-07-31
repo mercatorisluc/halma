@@ -65,19 +65,24 @@ players' home bases. A player's target is the star point opposite their start.
 
 ### Three ways to address a field
 
-This is the main source of confusion in the codebase. Every field carries all
-three; `HalmaBoard` converts between them.
+This is the main source of confusion in the codebase. A field carries the first
+two; `HalmaBoard` converts between them.
 
 | Name | Form | Used for |
 |---|---|---|
-| `coord` | axial hex `(x, y)` | geometry: distance, rotation, flipping, drawing |
+| `coord` | axial hex `(x, y)` | geometry: distance, rotation, flipping, drawing, and finding the field a jump passed over |
 | `id` | `0`–`120` | **everything else**: `board.fields[id]`, player positions, moves, RL actions |
-| `fieldNumber` | `(x+8) + (y+8)*17` | internal only — lets `initEdges` find neighbours by offset arithmetic on a 17×17 grid |
+| `fieldNumber` | `(x+8) + (y+8)*17` | build-time only — lets `initEdges` find neighbours by offset arithmetic on a 17×17 grid |
 
-`fieldNumber` is scaffolding. It exists so adjacency can be computed as simple
-addition (`directionMapper`) before everything is re-expressed as `id`s. It
-never becomes state on any object — `initEdges` builds the index it needs as a
-local — and it should not leak into new code.
+`fieldNumber` is pure scaffolding and does not exist outside `Initializer`: it
+is derived from `coord` where adjacency is being wired and is deliberately not
+stored on the field, because nothing after construction has a use for it. New
+code should not reintroduce it.
+
+`coord`, by contrast, is *not* build-time only — a common assumption worth
+correcting. Rendering, click hit-testing, the distance matrix, the RL symmetry
+permutations and `Move`'s jumped-over calculation all need it while the game is
+being played.
 
 The three are tied together by one rule worth knowing: **a field's `id` is its
 rank in `fieldNumber` order**. `Initializer.buildFields` builds the fields in
