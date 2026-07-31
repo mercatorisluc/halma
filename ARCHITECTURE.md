@@ -119,6 +119,10 @@ the wrong one is an easy mistake:
   `board.allValidMovesWithWay`. The visualization needs it to draw a multi-hop
   jump, and `Move` needs it to know the intermediate landings.
 
+`game/boardTypes.py` names both (`MoveEndpoints` = `tuple`, `MovePath` =
+`list`), so the distinction is checkable by the editor and not just described
+here. The same file names `FieldId`, `Coord` and `PlayerId`.
+
 There is **one** generator, not two: `allValidMovesWithWay` runs the BFS over
 chained jumps, and `allValidMoves` is its endpoints view. A single step goes to
 an empty neighbour; a jump hops over an occupied field onto the empty one

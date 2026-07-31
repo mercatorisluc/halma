@@ -42,6 +42,17 @@ consistent, and enabling `N` would flag ~300 violations and invite a rename
 touching every file for no functional gain. Match the surrounding camelCase in
 new code.
 
+## Type annotations
+
+`game/` and `heuristics/` annotate every method signature, using the aliases in
+`game/boardTypes.py` (`FieldId`, `Coord`, `PlayerId`, `MoveEndpoints`,
+`MovePath`, `AnyMove`). Keep new engine code annotated — the point is that the
+two move representations become checkable rather than merely documented.
+
+Annotate signatures, not obvious locals. There is no type checker in CI; the
+value is what the editor reports while writing. `visual/` and `env/` are
+deliberately unannotated, since both are due to be rewritten.
+
 ## Architecture
 
 **See `ARCHITECTURE.md`** — it is the single source of truth for how the code is

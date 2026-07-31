@@ -1,4 +1,13 @@
+from __future__ import annotations
+
 from collections import deque
+from typing import TYPE_CHECKING
+
+from game.boardTypes import AnyMove, FieldId, MoveEndpoints, MovePath
+
+if TYPE_CHECKING:
+    from game.board import HalmaBoard
+    from game.player import HalmaPlayer
 
 
 class Move:
@@ -10,22 +19,22 @@ class Move:
     visualization needs to draw the full path.
     """
 
-    def __init__(self, idList, player):
-        self.steps = idList
+    def __init__(self, idList: AnyMove, player: HalmaPlayer) -> None:
+        self.steps: MovePath = list(idList)
         self.start = self.steps[0]
         self.end = self.steps[-1]
         self.player = player
         # Only known once reconstructFullMove has run; ``None`` is what
         # needsReconstruction reports on, so it must not start as [].
-        self.jumpedOvers: list[int] | None = None
+        self.jumpedOvers: list[FieldId] | None = None
 
-    def partMoves(self):
+    def partMoves(self) -> list[MoveEndpoints]:
         return [(self.steps[i], self.steps[i + 1]) for i in range(len(self.steps) - 1)]
 
-    def needsReconstruction(self):
+    def needsReconstruction(self) -> bool:
         return self.jumpedOvers is None
 
-    def reconstructFullMove(self, board):
+    def reconstructFullMove(self, board: HalmaBoard) -> None:
         """Recover the full jump path for a move stored as just start/end.
 
         Works in either direction (the piece may already have been moved, so
@@ -59,7 +68,7 @@ class Move:
         self.steps = move
         self.calculateJumpedOverFields(board)
 
-    def calculateJumpedOverFields(self, board):
+    def calculateJumpedOverFields(self, board: HalmaBoard) -> None:
         self.jumpedOvers = []
         for partMove in self.partMoves():
             start, end = partMove
@@ -69,7 +78,7 @@ class Move:
                 id = board.idFromCoord((coordX, coordY))
                 self.jumpedOvers.append(id)
 
-    def fullStepsList(self):
+    def fullStepsList(self) -> MovePath:
         """Flatten the move into an alternating list
         ``[start, over, land, over, land, ..., end]`` for drawing the path.
 

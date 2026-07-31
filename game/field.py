@@ -1,3 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from game.boardTypes import Coord, FieldId, PlayerId
+
+if TYPE_CHECKING:
+    from game.player import HalmaPlayer
+
+
 class HalmaField:
     """One field of the board: who stands on it, what it borders, who may enter.
 
@@ -11,29 +21,31 @@ class HalmaField:
     ``Initializer`` computes it from ``coord`` where it needs it.
     """
 
-    def __init__(self, coord, id):
+    def __init__(self, coord: Coord, id: FieldId) -> None:
         self.coord = coord
         self.id = id
-        self.playerID = 0
-        self.neighbours = []
-        self.jumpNeighbours = {}
-        self.permissions = []
+        # 0 means empty; otherwise the identifier of the player standing here.
+        self.playerID: PlayerId = 0
+        self.neighbours: list[FieldId] = []
+        # jumped-over field -> the field landed on behind it
+        self.jumpNeighbours: dict[FieldId, FieldId] = {}
+        self.permissions: list[PlayerId] = []
 
-    def addNeighbour(self, id):
+    def addNeighbour(self, id: FieldId) -> None:
         self.neighbours.append(id)
 
-    def addJumpNeighbour(self, neighbour, jumpNeighbour):
+    def addJumpNeighbour(self, neighbour: FieldId, jumpNeighbour: FieldId) -> None:
         self.jumpNeighbours[neighbour] = jumpNeighbour
 
-    def removePlayer(self):
+    def removePlayer(self) -> None:
         self.playerID = 0
 
-    def isEmpty(self):
+    def isEmpty(self) -> bool:
         return self.playerID == 0
 
-    def setPermissions(self, players):
+    def setPermissions(self, players: list[HalmaPlayer]) -> None:
         for player in players:
             self.permissions.append(player.identifier)
 
-    def allows(self, player):
+    def allows(self, player: HalmaPlayer) -> bool:
         return player.identifier in self.permissions

@@ -1,4 +1,13 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from game.boardTypes import Coord, FieldId
 from game.field import HalmaField
+
+if TYPE_CHECKING:
+    from game.board import HalmaBoard
+    from game.player import HalmaPlayer
 
 
 class Initializer:
@@ -26,13 +35,13 @@ class Initializer:
     # the shared class attribute cannot be mutated by accident.
     DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1), (-1, 1), (1, -1))
 
-    def initializeBoard(self, board):
+    def initializeBoard(self, board: HalmaBoard) -> None:
         """Create every field, wire up neighbours/jumps, and cache distances."""
         board.setFields(self.buildFields())
         self.initEdges(board)
         board.calculateDistanceMatrix()
 
-    def player1Positions(self, board):
+    def player1Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i + 1):
@@ -41,7 +50,7 @@ class Initializer:
         homeBase = board.idFromCoord((-4, 8))
         return (startPositions, endPositions, homeBase)
 
-    def player2Positions(self, board):
+    def player2Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i + 1):
@@ -50,7 +59,7 @@ class Initializer:
         homeBase = board.idFromCoord((8, -4))
         return (startPositions, endPositions, homeBase)
 
-    def player3Positions(self, board):
+    def player3Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i + 1):
@@ -59,7 +68,7 @@ class Initializer:
         homeBase = board.idFromCoord((-4, -4))
         return (startPositions, endPositions, homeBase)
 
-    def buildFields(self):
+    def buildFields(self) -> list[HalmaField]:
         """Return every field, already ordered by id.
 
         The board is a central 9x9 rhombus plus four outward triangles. A
@@ -74,7 +83,7 @@ class Initializer:
         coords.sort(key=self.fieldNumberFromCoord)
         return [HalmaField(coord, id) for id, coord in enumerate(coords)]
 
-    def initEdges(self, board):
+    def initEdges(self, board: HalmaBoard) -> None:
         # A neighbour is one direction step away on the 17x17 grid, the jump
         # landing two. Both only exist if that fieldNumber is on the board.
         # fieldNumber lives only in this method: derived from the coordinate,
@@ -92,7 +101,7 @@ class Initializer:
                             idByFieldNumber[neighbour], idByFieldNumber[jumpNeighbour]
                         )
 
-    def initPermissions(self, board, players):
+    def initPermissions(self, board: HalmaBoard, players: list[HalmaPlayer]) -> None:
         # A field surrounded entirely by one player's start/end cells belongs
         # exclusively to that player (their home triangles); every other field
         # is open to all players.
@@ -110,9 +119,9 @@ class Initializer:
             if not field.permissions:
                 field.setPermissions(players)
 
-    def fieldNumberFromCoord(self, coord):
+    def fieldNumberFromCoord(self, coord: Coord) -> int:
         x, y = coord
         return (x + 8) + (y + 8) * 17
 
-    def directionMapper(self, di, dj):
+    def directionMapper(self, di: int, dj: int) -> int:
         return di + 17 * dj

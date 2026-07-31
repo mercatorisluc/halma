@@ -28,22 +28,22 @@ class HumanInputHandler:
                 return move
         return None
 
-    def adaptToHumanInteraction(self, halmaGame):
-        player = halmaGame.currentPlayer()
+    def adaptToHumanInteraction(self, game):
+        player = game.currentPlayer()
         self.waitingForHumanMove = player.isHuman()
         if self.waitingForHumanMove:
             if self.validHumanMoves is None:
-                self.validHumanMoves = halmaGame.board.allValidMovesWithWay(player)
+                self.validHumanMoves = game.board.allValidMovesWithWay(player)
         else:
             self.validHumanMoves = None
 
-    def handleHumanMove(self, halmaGame):
+    def handleHumanMove(self, game):
         if not self.humanMove:
             return
         chosenMove = self.matchingValidMove()
         self.humanMove = None
         if chosenMove:
-            halmaGame.playMove(halmaGame.currentPlayer(), chosenMove)
+            game.playMove(game.currentPlayer(), chosenMove)
             self.playback.moveTraveler += 1
             self.clickedField = None
 

@@ -1,4 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from game.boardTypes import AnyMove, FieldId, MovePath, PlayerId
 from heuristics.strategy import Strategy
+
+if TYPE_CHECKING:
+    from game.board import HalmaBoard
 
 
 class HalmaPlayer:
@@ -10,20 +18,20 @@ class HalmaPlayer:
     have to recompute them.
     """
 
-    def __init__(self, identifier):
+    def __init__(self, identifier: PlayerId) -> None:
         self.identifier = identifier
-        self.positions = set()
-        self.startPositions = set()
-        self.endPositions = set()
-        self.openEndPositions = set()
-        self.nonArrived = set()
-        self.homeBase = None
+        self.positions: set[FieldId] = set()
+        self.startPositions: set[FieldId] = set()
+        self.endPositions: set[FieldId] = set()
+        self.openEndPositions: set[FieldId] = set()
+        self.nonArrived: set[FieldId] = set()
+        self.homeBase: FieldId | None = None
         self.distanceScore = 0
 
-    def setHomeBase(self, position):
+    def setHomeBase(self, position: FieldId) -> None:
         self.homeBase = position
 
-    def prepareForGameStart(self, board):
+    def prepareForGameStart(self, board: HalmaBoard) -> None:
         for id in self.startPositions:
             board.fields[id].playerID = self.identifier
         self.positions.update(self.startPositions)
@@ -31,7 +39,7 @@ class HalmaPlayer:
         self.openEndPositions = self.endPositions - self.positions
         self.distanceScore = board.calculatePlayerDistanceScore(self)
 
-    def updatePositionWithMove(self, move):
+    def updatePositionWithMove(self, move: AnyMove) -> None:
         start, end = move[0], move[-1]
         self.positions.remove(start)
         self.positions.add(end)
@@ -42,33 +50,33 @@ class HalmaPlayer:
         self.nonArrived.discard(start)
         self.nonArrived -= self.endPositions
 
-    def isWinning(self):
+    def isWinning(self) -> bool:
         return self.positions == self.endPositions
 
-    def setStartPositions(self, positions):
+    def setStartPositions(self, positions: list[FieldId]) -> None:
         self.startPositions = set(positions)
 
-    def setEndPositions(self, positions):
+    def setEndPositions(self, positions: list[FieldId]) -> None:
         self.endPositions = set(positions)
 
 
 class HumanPlayer(HalmaPlayer):
     """A player whose moves come from the visualization's click handling."""
 
-    def isHuman(self):
+    def isHuman(self) -> bool:
         return True
 
 
 class Computer(HalmaPlayer):
     """A bot player that picks moves via a named heuristic strategy."""
 
-    def __init__(self, identifier, strategyName):
+    def __init__(self, identifier: PlayerId, strategyName: str) -> None:
         super().__init__(identifier)
         self.strategy = Strategy(strategyName)
 
-    def isHuman(self):
+    def isHuman(self) -> bool:
         return False
 
-    def chooseMove(self, moves, board):
+    def chooseMove(self, moves: list[MovePath], board: HalmaBoard) -> MovePath:
         # Delegate the choice to the configured heuristic strategy.
         return self.strategy.bestMove(moves, board, self)

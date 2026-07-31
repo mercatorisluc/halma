@@ -65,10 +65,10 @@ class GameVisualization:
                 self.input.handleClickedField(clicked)
         return True
 
-    def runGame(self, halmaGame):
+    def runGame(self, game):
         running = True
         while running:
-            self.renderer.drawBoard(halmaGame.board)
+            self.renderer.drawBoard(game.board)
             self.renderer.drawLastMove(self.playback.moveTraveler)
             self.renderer.drawInteractiveElements(
                 self.input.clickedField,
@@ -76,15 +76,15 @@ class GameVisualization:
                 self.input.validHumanMoves,
             )
             running = self.handleEvents()
-            self.input.adaptToHumanInteraction(halmaGame)
+            self.input.adaptToHumanInteraction(game)
             if self.input.waitingForHumanMove:
-                self.input.handleHumanMove(halmaGame)
-            elif self.playback.moveTraveler == len(halmaGame.moves):
+                self.input.handleHumanMove(game)
+            elif self.playback.moveTraveler == len(game.moves):
                 # Bot's turn at the live front of the game: play automatically.
                 # While the history is being reviewed (cursor not at the front)
                 # this is skipped, so back/forward stepping is unaffected.
                 self.playback.playNextMove()
-            if halmaGame.winner() is not None:
+            if game.winner() is not None:
                 running = False
             pygame.display.flip()
             self.clock.tick(10)
