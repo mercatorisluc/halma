@@ -20,8 +20,10 @@ class HumanInputHandler:
 
         The click gives only ``(start, end)``; playing it needs the whole jump
         path, so the pair is looked up among the legal moves rather than
-        merely validated.
+        merely validated. ``None`` if nothing is pending or nothing matches.
         """
+        if self.humanMove is None or self.validHumanMoves is None:
+            return None
         start, end = self.humanMove
         for move in self.validHumanMoves:
             if (start == move[0]) and (end == move[-1]):

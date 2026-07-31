@@ -130,14 +130,16 @@ class HalmaGame:
         return boardState, validMoves, player
 
     def printBoard(self) -> None:
-        boardMatrix = [[" " for _ in range(26)] for _ in range(18)]
+        boardMatrix: list[list[str]] = [[" " for _ in range(26)] for _ in range(18)]
         for field in self.board.fields:
             x, y = field.coord
             projectedX = 13 + y + (x * 2)
             projectedY = 9 - y
-            boardMatrix[projectedY][projectedX] = field.playerID
+            # playerID is an int for bot games and a name for interactive ones,
+            # so render it here rather than storing mixed types in the grid.
+            boardMatrix[projectedY][projectedX] = str(field.playerID)
         for row in boardMatrix:
-            print(" ".join(str(x) for x in row))
+            print(" ".join(row))
 
 
 class ComputedGame(HalmaGame):

@@ -60,8 +60,7 @@ def test_board_is_restored_when_scoring_raises(board, game):
     beforePositions = set(player.positions)
     beforeScore = player.distanceScore
 
-    strategy = Strategy("advancedDistScore")
-    strategy.scoringFunction = _raise
+    strategy = _RaisingStrategy("advancedDistScore")
 
     with pytest.raises(ValueError):
         strategy.bestMove(sorted(board.allValidMoves(player)), board, player)
@@ -71,8 +70,11 @@ def test_board_is_restored_when_scoring_raises(board, game):
     assert player.distanceScore == pytest.approx(beforeScore)
 
 
-def _raise(*args):
-    raise ValueError("scoring blew up")
+class _RaisingStrategy(Strategy):
+    """Stands in for a scoring function that blows up mid-evaluation."""
+
+    def scoringFunction(self, board, player):
+        raise ValueError("scoring blew up")
 
 
 def test_random_strategy_returns_one_of_the_offered_moves(board, game):

@@ -73,8 +73,10 @@ class Move:
         for partMove in self.partMoves():
             start, end = partMove
             if board.isJumpMove(start, end):
-                coordX = (board.fields[start].coord[0] + board.fields[end].coord[0]) / 2
-                coordY = (board.fields[start].coord[1] + board.fields[end].coord[1]) / 2
+                # A jump spans exactly two fields, so both sums are even and
+                # the midpoint is an exact integer coordinate.
+                coordX = (board.fields[start].coord[0] + board.fields[end].coord[0]) // 2
+                coordY = (board.fields[start].coord[1] + board.fields[end].coord[1]) // 2
                 id = board.idFromCoord((coordX, coordY))
                 self.jumpedOvers.append(id)
 

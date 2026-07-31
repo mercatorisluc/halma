@@ -53,6 +53,16 @@ class HalmaPlayer:
     def isWinning(self) -> bool:
         return self.positions == self.endPositions
 
+    def isHuman(self) -> bool:
+        """Whether moves come from the UI rather than from the player itself."""
+        raise NotImplementedError
+
+    def chooseMove(self, moves: list[MovePath], board: HalmaBoard) -> MovePath:
+        """Pick one of ``moves``. Only bots can: a human's move arrives through
+        the visualization, so :meth:`HalmaGame.getNextMove` is never reached for
+        them."""
+        raise NotImplementedError
+
     def setStartPositions(self, positions: list[FieldId]) -> None:
         self.startPositions = set(positions)
 

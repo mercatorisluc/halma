@@ -27,12 +27,27 @@ ruff check . --fix
 # Format (must stay clean)
 ruff format .
 ruff format --check .
+
+# Type check (must stay clean)
+basedpyright .
 ```
 
-`pytest`, `ruff check .` and `ruff format --check .` are the CI-relevant
-commands; there is no build step and no type checking. Both the rule set and the
-formatter settings are pinned in `ruff.toml` rather than left to ruff's shifting
-defaults.
+All four must stay green; there is no build step. The pre-commit hook in
+`.githooks/` runs exactly these, so enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Both the ruff rule set and the formatter settings are pinned in `ruff.toml`
+rather than left to ruff's shifting defaults; the type checker is configured in
+`pyrightconfig.json`, which the editor reads as well.
+
+**Ruff does not check types.** That is why the type checker is a separate gate:
+things like assigning an `int | str` into a `list[str]` pass lint cleanly and
+would otherwise only surface as a squiggle in the editor. `env/` is excluded
+from type checking on purpose — `HalmaEnv` does not satisfy the Gymnasium API
+yet, and fixing that is the first task of the RL work.
 
 Layout is the formatter's decision — do not hand-tune blank lines, quotes or
 line breaks, and run `ruff format .` before committing. Naming is the one thing

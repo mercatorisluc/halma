@@ -7,10 +7,12 @@ from game.player import Computer, HumanPlayer
 def test_computed_game_seats_two_bots_with_their_strategies():
     game = ComputedGame()
     game.initStandardGame()
-    assert [type(p) for p in game.players] == [Computer, Computer]
-    assert game.players[0].strategy.strategyName == "advancedDistScore"
-    assert game.players[1].strategy.strategyName == "sparsityScore"
-    assert all(not p.isHuman() for p in game.players)
+    bots = game.players
+    assert [type(p) for p in bots] == [Computer, Computer]
+    assert all(isinstance(p, Computer) for p in bots)
+    strategyNames = [p.strategy.strategyName for p in bots if isinstance(p, Computer)]
+    assert strategyNames == ["advancedDistScore", "sparsityScore"]
+    assert all(not p.isHuman() for p in bots)
 
 
 def test_computed_game_is_not_a_human_game():

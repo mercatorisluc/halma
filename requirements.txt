@@ -7,4 +7,5 @@ gymnasium>=1.0
 
 # Development / testing
 pytest>=8.0
-ruff>=0.16          # linter; rule set configured in ruff.toml
+ruff>=0.16          # linter + formatter; configured in ruff.toml
+basedpyright>=1.39  # type checker; configured in pyrightconfig.json

@@ -151,6 +151,7 @@ class HalmaBoard:
         # Total distance of the player's pieces from their own home base;
         # lower is better (pieces have advanced further). Scaled by 16.
         homeBase = player.homeBase
+        assert homeBase is not None, "homeBase is set during game setup"
         score = 0
         for id in player.positions:
             score += self.distanceMatrix[id][homeBase]
@@ -217,7 +218,9 @@ class HalmaBoard:
         # How far the most trailing piece lags behind the group: the largest
         # deviation of any piece's distance-from-home above the group mean.
         # Lower is better (pieces advance together). Scaled by 12.
-        distances = [self.distanceMatrix[p][player.homeBase] for p in player.positions]
+        homeBase = player.homeBase
+        assert homeBase is not None, "homeBase is set during game setup"
+        distances = [self.distanceMatrix[p][homeBase] for p in player.positions]
         meanDist = np.mean(distances)
         maxDeviation = max(d - meanDist for d in distances)
         return maxDeviation / 12
