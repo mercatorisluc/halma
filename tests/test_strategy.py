@@ -2,7 +2,7 @@
 
 import pytest
 
-from heuristics.strategy import Strategy
+from heuristics.strategy import STRATEGY_NAMES, LookaheadStrategy, Strategy, makeStrategy
 
 
 @pytest.fixture
@@ -32,6 +32,67 @@ def test_sparsity_score_dispatches_to_the_combined_formula(board, player):
         + board.homeBonusScore(player)
     )
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
+
+
+def test_bottleneck_dispatches_to_advanced_dist_plus_the_straggler(board, player):
+    strategy = Strategy("bottleneck")
+    expected = (
+        board.advancedDistanceScore(player) + board.homeBonusScore(player)
+    ) / 2 + Strategy.BOTTLENECK_WEIGHT * board.bottleneckScore(player)
+    assert strategy.scoringFunction(board, player) == pytest.approx(expected)
+
+
+def test_every_registered_strategy_can_be_built_and_scored(board, player):
+    # SCORERS is the single source of truth; STRATEGY_NAMES adds the search on
+    # top. Anything listed must actually work, or baseline.py breaks mid-run.
+    for name in STRATEGY_NAMES:
+        strategy = makeStrategy(name)
+        assert strategy.strategyName == name
+        if name in Strategy.SCORERS:
+            assert isinstance(strategy.scoringFunction(board, player), float)
+
+
+def test_unknown_strategy_is_rejected_at_construction():
+    # Previously this surfaced as a bare KeyError on the first scoring call,
+    # deep inside a running game.
+    with pytest.raises(ValueError, match="unknown strategy"):
+        makeStrategy("noSuchStrategy")
+
+
+def test_lookahead_searches_and_leaves_the_board_untouched(board, game):
+    # The search nests moveApplied for TWO different players -- ours, then the
+    # opponent's reply inside it. Each undo has to be an exact inverse and the
+    # blocks have to unwind in order, for both players' derived state.
+    player = game.players[0]
+    strategy = makeStrategy(LookaheadStrategy.NAME)
+    assert isinstance(strategy, LookaheadStrategy)
+
+    def snapshot():
+        return {
+            p.identifier: (
+                set(p.positions),
+                set(p.nonArrived),
+                set(p.openEndPositions),
+                p.distanceScore,
+            )
+            for p in game.players
+        }
+
+    beforeBoard = board.boardState().copy()
+    before = snapshot()
+
+    chosen = strategy.bestMove(board.allValidMovesWithWay(player), board, player)
+
+    assert chosen in board.allValidMovesWithWay(player)
+    assert (board.boardState() == beforeBoard).all()
+    assert snapshot() == before
+
+
+def test_seating_gives_every_player_its_opponents(game):
+    # The searching strategy needs to score the opposition, and the board holds
+    # no player list.
+    for player in game.players:
+        assert player.opponents == [p for p in game.players if p is not player]
 
 
 def test_random_strategy_scores_every_position_equally(board, player):

@@ -62,6 +62,11 @@ class HalmaGame:
             self.players.append(player)
             player.rng = self.rng
             player.prepareForGameStart(self.board)
+        for player in self.players:
+            # Strategies that search need to score the opposition too, and the
+            # board holds no player list. Injected here rather than passed into
+            # scoringFunction so its (board, player) signature stays put.
+            player.opponents = [other for other in self.players if other is not player]
         self.computePlayersOrder()
 
     def setPlayerPositions(
@@ -180,14 +185,19 @@ class InteractiveGame(HalmaGame):
     def __init__(self):
         super().__init__()
 
+    # The strongest measured one-ply bot, so the human gets a real opponent.
+    # lookahead2 is stronger still but takes ~23ms a move; revisit if that
+    # proves acceptable in the pygame loop.
+    HUMAN_OPPONENT = "bottleneck"
+
     def initStandardGame(self) -> None:
         human = HumanPlayer(1)
-        bot = Computer(2, "sparsityScore")
+        bot = Computer(2, self.HUMAN_OPPONENT)
         super().initGame([human, bot])
 
     def init3PlayerGame(self) -> None:
-        bot1 = Computer(1, "advancedDistScore")
-        bot2 = Computer(2, "sparsityScore")
+        bot1 = Computer(1, self.HUMAN_OPPONENT)
+        bot2 = Computer(2, self.HUMAN_OPPONENT)
         human = HumanPlayer(3)
         super().initGame([bot1, bot2, human])
 

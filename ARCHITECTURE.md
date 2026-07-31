@@ -163,14 +163,37 @@ otherwise a single squatter could deadlock the game forever.
 `HalmaBoard` does double duty: move generation *and* the heuristic scoring
 functions the bots rank positions with (`simpleDistanceScore`,
 `advancedDistanceScore`, `sparsityScore`, `playerSparsityScore`,
-`potentialJumpScore`, `homeBonusScore`). For all of them **lower is better**.
+`potentialJumpScore`, `homeBonusScore`, `bottleneckScore`). For all of them
+**lower is better**.
 
 ### `heuristics/` — the bots
 
-`Strategy` maps a name (`"advancedDistScore"`, `"sparsityScore"`,
-`"simpleDistScore"`, `"random"`) to a combination of the board's scoring
-functions. `bestMove` evaluates every candidate by **applying it to the real
-board, scoring, then reversing it**, and picks a minimum at random among ties.
+`Strategy.SCORERS` maps a strategy name to the method implementing it and is
+the single source of truth for which strategies exist — construction validates
+against it and `scripts/baseline.py` enumerates `STRATEGY_NAMES`, so no second
+list can drift. `bestMove` evaluates every candidate by **applying it to the
+real board, scoring, then reversing it**, and picks a minimum at random among
+ties.
+
+Two findings are worth recording, because both cost real time to establish and
+would otherwise be rediscovered the expensive way:
+
+- **Opponent-awareness cannot help at one ply.** An opponent's distance and
+  home-bonus terms are *identical* across all of the mover's candidates — the
+  opposition does not move while you evaluate your own options — so subtracting
+  them shifts every candidate equally and cannot change which move wins.
+  Measured: one distinct value across 72 candidates. It only pays inside a
+  search, where the replies differ, which is what `LookaheadStrategy` is for.
+- **Rewarding long available jump chains makes the bot worse**, badly: 8.8% and
+  0.0% win rates against `advancedDistScore` at two weights. Preferring
+  positions that *have* long chains keeps pieces hoarding jump potential
+  instead of advancing.
+
+What does work is `bottleneckScore`: the distance still facing the piece left
+furthest behind. The game ends only when every piece is home, so the sum of
+distances is the wrong late objective — it collapses while one straggler
+decides the length of the game. Adding it to `advancedDist` wins 84% (±5.9 over
+150 games) against plain `advancedDist`, robust across weights from 0.02 to 1.0.
 
 The mutation is scoped by `board.moveApplied(move, player)`, a context manager
 that undoes the move in a `finally`. Copying the board per candidate would be
@@ -235,7 +258,13 @@ It must **not** be initialised to `[]` — `needsReconstruction()` reports on
 exactly that `None`, so an empty list would make every move look already
 reconstructed. `fullStepsList()` raises a `RuntimeError` if called first.
 
-**4. Derived player sets are updated on every move.**
+**4. Reversing nests correctly across players.**
+`LookaheadStrategy` applies its own move and then the opponent's reply inside
+it. Each `moveApplied` block undoes exactly its own move and they unwind in
+order, so both players' `positions`, `nonArrived`, `openEndPositions` and
+`distanceScore` come back unchanged. Pinned in `tests/test_strategy.py`.
+
+**5. Derived player sets are updated on every move.**
 `nonArrived` and `openEndPositions` are kept in sync by
 `updatePositionWithMove` so the heuristics never have to recompute them. Code
 that moves pieces by writing `field.playerID` directly (as some tests do

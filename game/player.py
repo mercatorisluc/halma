@@ -4,7 +4,7 @@ import random
 from typing import TYPE_CHECKING
 
 from game.boardTypes import AnyMove, FieldId, MovePath, PlayerId
-from heuristics.strategy import Strategy
+from heuristics.strategy import makeStrategy
 
 if TYPE_CHECKING:
     from game.board import HalmaBoard
@@ -31,6 +31,8 @@ class HalmaPlayer:
         # Replaced with the game's generator when seated, so one seed
         # reproduces a whole game.
         self.rng = random.Random()
+        # Filled in by HalmaGame.initPlayers. Only searching strategies need it.
+        self.opponents: list[HalmaPlayer] = []
 
     def setHomeBase(self, position: FieldId) -> None:
         self.homeBase = position
@@ -86,7 +88,7 @@ class Computer(HalmaPlayer):
 
     def __init__(self, identifier: PlayerId, strategyName: str) -> None:
         super().__init__(identifier)
-        self.strategy = Strategy(strategyName)
+        self.strategy = makeStrategy(strategyName)
 
     def isHuman(self) -> bool:
         return False

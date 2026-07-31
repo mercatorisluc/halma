@@ -18,8 +18,7 @@ from itertools import combinations
 
 from game.gameManager import ComputedGame
 from game.player import Computer
-
-STRATEGIES = ["random", "simpleDistScore", "advancedDistScore", "sparsityScore"]
+from heuristics.strategy import STRATEGY_NAMES
 
 
 @dataclass
@@ -76,7 +75,7 @@ def main() -> None:
     # not confer an advantage -- play order is shuffled per game -- so each
     # unordered pair is played once. random against itself is kept as a sanity
     # check: two aimless players should never finish.
-    matchups = [("random", "random"), *combinations(STRATEGIES, 2)]
+    matchups = [("random", "random"), *combinations(STRATEGY_NAMES, 2)]
 
     print(f"{args.games} games per matchup, seed {args.seed}\n")
     header = f"{'seat 1':<18} {'seat 2':<18} {'win%':>14}  {'draws':>6}  {'avg moves':>9}"

@@ -215,15 +215,40 @@ class HalmaBoard:
         return score / len(player.positions)
 
     def playerSparsityScore(self, player: HalmaPlayer) -> float:
-        # How far the most trailing piece lags behind the group: the largest
-        # deviation of any piece's distance-from-home above the group mean.
-        # Lower is better (pieces advance together). Scaled by 12.
+        # How far the LEADING piece has run ahead of the group: the largest
+        # deviation above the mean distance-from-home. Lower is better, so this
+        # discourages one piece sprinting off alone. Scaled by 12.
+        #
+        # Note it measures the front of the pack, not the back -- the piece
+        # holding the game up is the one nearest home, which bottleneckScore
+        # covers instead.
         homeBase = player.homeBase
         assert homeBase is not None, "homeBase is set during game setup"
         distances = [self.distanceMatrix[p][homeBase] for p in player.positions]
         meanDist = np.mean(distances)
         maxDeviation = max(d - meanDist for d in distances)
         return maxDeviation / 12
+
+    def bottleneckScore(self, player: HalmaPlayer) -> float:
+        """How far the most backward piece still has to travel.
+
+        The game only ends once *every* piece is home, so late on the sum of
+        distances is the wrong objective -- it keeps falling while a single
+        straggler decides how long the game lasts. This measures that
+        straggler: the largest, over pieces not yet home, of the distance to
+        the nearest target field still free. Lower is better.
+
+        Coarse by nature (a max over integers), so it discriminates poorly on
+        its own and belongs on top of a finer distance term.
+        """
+        if not player.nonArrived or not player.openEndPositions:
+            return 0.0
+        return float(
+            max(
+                min(self.distanceMatrix[piece][target] for target in player.openEndPositions)
+                for piece in player.nonArrived
+            )
+        )
 
     def potentialJumpScore(self, player: HalmaPlayer) -> float:
         # Rewards positions that have available jumps (a piece to hop over onto

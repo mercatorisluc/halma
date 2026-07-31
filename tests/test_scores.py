@@ -29,6 +29,38 @@ def test_home_bonus_score_is_one_before_any_piece_arrives(board, player):
     assert board.homeBonusScore(player) == pytest.approx(1.0)
 
 
+def test_bottleneck_score(board, player):
+    # At the start every piece is 12 steps from the nearest free target field.
+    assert board.bottleneckScore(player) == pytest.approx(12.0)
+
+
+def test_bottleneck_score_is_zero_once_everything_has_arrived(board, game):
+    player = game.players[0]
+    for field in board.fields:
+        if field.playerID == player.identifier:
+            field.removePlayer()
+    for target in player.endPositions:
+        board.fields[target].playerID = player.identifier
+    player.positions = set(player.endPositions)
+    player.nonArrived = set()
+    player.openEndPositions = set()
+    assert board.bottleneckScore(player) == 0.0
+
+
+def test_bottleneck_score_is_the_worst_piece_not_the_average(board, game):
+    # Independently recomputed: the largest, over pieces still on their way, of
+    # the distance to the nearest free target. The distinction from a mean is
+    # the whole point -- one straggler decides when the game ends.
+    player = game.players[0]
+    game.playNextMove(player)
+    perPiece = [
+        min(board.distanceMatrix[piece][target] for target in player.openEndPositions)
+        for piece in player.nonArrived
+    ]
+    assert board.bottleneckScore(player) == pytest.approx(max(perPiece))
+    assert max(perPiece) > sum(perPiece) / len(perPiece), "expected a spread to distinguish them"
+
+
 def test_potential_jump_score(board, player):
     assert board.potentialJumpScore(player) == pytest.approx(0.8400000000000001)
 
