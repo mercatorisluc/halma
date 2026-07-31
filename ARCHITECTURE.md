@@ -195,6 +195,15 @@ distances is the wrong late objective — it collapses while one straggler
 decides the length of the game. Adding it to `advancedDist` wins 84% (±5.9 over
 150 games) against plain `advancedDist`, robust across weights from 0.02 to 1.0.
 
+Strength order, all measured: `lookahead2` > `bottleneck` > `advancedDistScore`
+> `simpleDistScore` > `sparsityScore` >> `random`. `InteractiveGame` seats the
+strongest; `ComputedGame` keeps the cheap one-ply bots because it feeds the RL
+environment, where a two-ply search at ~130ms a move is out of the question.
+
+Seats confer no advantage, which is what makes `scripts/baseline.py` readable:
+in 400 mirror games seat 1 won 47.8% (±4.9) and the player on move 53.5%
+(±4.9) — both consistent with an even game.
+
 The mutation is scoped by `board.moveApplied(move, player)`, a context manager
 that undoes the move in a `finally`. Copying the board per candidate would be
 far more expensive, and the undo is exact — see the invariants. The consequence

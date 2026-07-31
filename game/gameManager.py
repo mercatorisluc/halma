@@ -185,10 +185,12 @@ class InteractiveGame(HalmaGame):
     def __init__(self):
         super().__init__()
 
-    # The strongest measured one-ply bot, so the human gets a real opponent.
-    # lookahead2 is stronger still but takes ~23ms a move; revisit if that
-    # proves acceptable in the pygame loop.
-    HUMAN_OPPONENT = "bottleneck"
+    # The strongest measured bot, so the human gets a real opponent: lookahead2
+    # beats bottleneck 90%, which beats advancedDistScore 84%. Its worst move
+    # takes ~130ms, over the pygame loop's 100ms frame budget, but that reads as
+    # the opponent thinking rather than as a stutter. ComputedGame deliberately
+    # keeps the cheap bots -- it feeds the RL env, which needs speed.
+    HUMAN_OPPONENT = "lookahead2"
 
     def initStandardGame(self) -> None:
         human = HumanPlayer(1)

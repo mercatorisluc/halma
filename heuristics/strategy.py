@@ -102,10 +102,10 @@ class LookaheadStrategy(Strategy):
     game -- which is fine for playing a human but far too slow for generating
     training data.
 
-    Treat it as unproven: depth beats the one-ply heuristics, but it has *not*
-    been shown to beat ``bottleneck``, and searching one ply deeper is no use
-    if the leaf evaluation is the weaker part. Run it through
-    ``scripts/baseline.py`` before preferring it to anything.
+    It is the strongest bot here: 90% (+/- 9.3 over 40 games) against
+    ``bottleneck``, which is itself 84% against ``advancedDistScore``. Worst
+    observed move takes 132ms, which is a natural-feeling pause in a
+    turn-based game but far too slow to generate training data with.
 
     This is also the only place where scoring the opponent pays off. At one ply
     the opponent's position is identical across all of the mover's candidates,
