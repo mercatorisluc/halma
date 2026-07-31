@@ -123,6 +123,13 @@ the wrong one is an easy mistake:
 `list`), so the distinction is checkable by the editor and not just described
 here. The same file names `FieldId`, `Coord` and `PlayerId`.
 
+`PlayerId` is an `int` — a seat number, 1 to 3. Never a name, and never 0,
+because 0 is what an empty `HalmaField` holds. `board.boardState()` collects
+those ids into a numpy array that the RL layer does arithmetic on, so a string
+identifier would turn it into a string array in which every empty field
+compares unequal to 0 and reads as an opponent's piece. Whether a player is
+human is answered by `isHuman()`, not by their identifier.
+
 There is **one** generator, not two: `allValidMovesWithWay` runs the BFS over
 chained jumps, and `allValidMoves` is its endpoints view. A single step goes to
 an empty neighbour; a jump hops over an occupied field onto the empty one

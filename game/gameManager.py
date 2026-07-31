@@ -135,8 +135,6 @@ class HalmaGame:
             x, y = field.coord
             projectedX = 13 + y + (x * 2)
             projectedY = 9 - y
-            # playerID is an int for bot games and a name for interactive ones,
-            # so render it here rather than storing mixed types in the grid.
             boardMatrix[projectedY][projectedX] = str(field.playerID)
         for row in boardMatrix:
             print(" ".join(row))
@@ -164,20 +162,24 @@ class ComputedGame(HalmaGame):
 
 
 class InteractiveGame(HalmaGame):
-    """A game with a human player, driven through the visualization."""
+    """A game with a human player, driven through the visualization.
+
+    Identifiers are seat numbers, as everywhere else — who is human is answered
+    by :meth:`HalmaPlayer.isHuman`, not by the identifier.
+    """
 
     def __init__(self):
         super().__init__()
 
     def initStandardGame(self) -> None:
-        human = HumanPlayer("HumanPlayer")
-        bot = Computer("Bot2", "sparsityScore")
+        human = HumanPlayer(1)
+        bot = Computer(2, "sparsityScore")
         super().initGame([human, bot])
 
     def init3PlayerGame(self) -> None:
-        bot1 = Computer("Bot1", "advancedDistScore")
-        bot2 = Computer("Bot2", "sparsityScore")
-        human = HumanPlayer("HumanPlayer")
+        bot1 = Computer(1, "advancedDistScore")
+        bot2 = Computer(2, "sparsityScore")
+        human = HumanPlayer(3)
         super().initGame([bot1, bot2, human])
 
     def isHumanGame(self) -> bool:

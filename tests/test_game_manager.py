@@ -1,7 +1,29 @@
 """Characterization tests for HalmaGame/ComputedGame/InteractiveGame in game/gameManager.py."""
 
+import pytest
+
 from game.gameManager import ComputedGame, InteractiveGame
 from game.player import Computer, HumanPlayer
+
+
+@pytest.mark.parametrize("gameClass", [ComputedGame, InteractiveGame])
+@pytest.mark.parametrize("setUp", ["initStandardGame", "init3PlayerGame"])
+def test_player_identifiers_are_seat_numbers(gameClass, setUp):
+    # Identifiers must be ints numbered from 1, never names, and never 0 --
+    # 0 is what an empty field holds. boardState() gathers them into a numpy
+    # array that the RL code does arithmetic on, so a string identifier would
+    # make it a string array where every empty field compares unequal to 0 and
+    # reads as an opponent piece.
+    game = gameClass()
+    getattr(game, setUp)()
+    identifiers = [p.identifier for p in game.players]
+    assert identifiers == list(range(1, len(game.players) + 1))
+
+    boardState = game.board.boardState()
+    assert boardState.dtype.kind == "i"
+    assert int((boardState != 0).sum()) == 15 * len(game.players)
+    for player in game.players:
+        assert int((boardState == player.identifier).sum()) == 15
 
 
 def test_computed_game_seats_two_bots_with_their_strategies():

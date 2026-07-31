@@ -16,9 +16,15 @@ FieldId = int
 # Axial hex coordinate. Halves occur transiently in Move's midpoint arithmetic.
 Coord = tuple[int, int]
 
-# Whatever a player was constructed with: ints for bot games, names for the
-# interactive one. Also what lands in HalmaField.playerID.
-PlayerId = int | str
+# A player's seat: 1, 2 or 3. Also what lands in HalmaField.playerID, where 0
+# additionally means "empty" -- so identifiers must never be 0.
+#
+# This is an int on purpose. board.boardState() collects playerIDs into a numpy
+# array, and the RL code does arithmetic on it (``normalized != 0`` to find
+# occupied fields, ``== playerID`` to find one player's pieces). A string
+# identifier turns that array into a string array, where every empty field
+# compares unequal to 0 and reads as an opponent piece.
+PlayerId = int
 
 # A move as its two endpoints, e.g. from board.allValidMoves.
 MoveEndpoints = tuple[FieldId, FieldId]
