@@ -177,11 +177,25 @@ class HalmaEnv(gym.Env):
         random player -- while keeping the opponent from 14 down to 12. Only
         real progress of its own moves this.
 
-        Divided by the progress left at the opening, so the whole episode's
-        shaping sums to about 1 and stays comparable to the +/-1 for the result.
-        Unnormalised it is around 7.7, which would drown the result out.
+        Ground covered, in [0, 1]: 0 at the opening, 1 with everything home.
+
+        The sign is load-bearing and easy to get backwards -- an earlier version
+        measured the ground *remaining*, putting the potential in [-1, 0], and
+        that quietly paid the agent to do nothing. With a discount below 1 the
+        shaping term for an unchanged position is ``(gamma - 1) * phi``, which
+        for a negative potential is *positive*: 0.99*(-1) - (-1) = +0.01 every
+        step, whatever the move. Over a 125-step game that is +1.25 against -1
+        for losing, so stalling paid better than winning, and three training
+        runs duly learned to stall. Measured from zero upwards the same term is
+        (gamma - 1) * phi <= 0: standing still earns nothing, and dawdling near
+        the goal costs a little.
+
+        Also divided by the distance facing the agent at the opening, so an
+        episode's shaping sums to about 1, the same order as the +/-1 for the
+        result. Unnormalised it is around 7.7 and would drown the result out.
         """
-        return -self._progress(self._player(self.AGENT_SEAT)) / self.openingProgress
+        remaining = self._progress(self._player(self.AGENT_SEAT))
+        return 1.0 - remaining / self.openingProgress
 
     def _shaping(self, terminated: bool) -> float:
         """Potential-based shaping: ``weight * (gamma * phi(s') - phi(s))``.

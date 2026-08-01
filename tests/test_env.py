@@ -86,7 +86,7 @@ def test_potential_measures_own_progress_only():
     env = HalmaEnv()
     env.reset(seed=0)
     opening = env._potential()
-    assert opening == pytest.approx(-1.0), "normalised so the opening sits at -1"
+    assert opening == pytest.approx(0.0), "ground covered, so the opening sits at 0"
 
     opponent = env._player(env.OPPONENT_SEAT)
     for field in env.board.fields:
@@ -102,6 +102,26 @@ def test_potential_measures_own_progress_only():
     opponent.distanceScore = env.board.calculatePlayerDistanceScore(opponent)
 
     assert env._potential() == pytest.approx(opening), "the opponent must not move it"
+
+
+def test_standing_still_is_never_rewarded():
+    """The sign bug that made three training runs learn to stall.
+
+    With a discount below 1 the shaping for an unchanged position is
+    ``(gamma - 1) * phi``. Measuring ground *remaining* puts the potential at
+    -1 and turns that into +0.01 a step for doing nothing -- +1.25 over a game,
+    against -1 for losing, so stalling outpaid winning. Measuring ground
+    covered keeps the potential at or above 0, where the same term cannot be
+    positive.
+    """
+    env = HalmaEnv()
+    env.reset(seed=0)
+    assert env._potential() >= 0.0
+
+    for phi in (0.0, 0.25, 0.5, 1.0):
+        env.previousPotential = phi
+        idle = env.shapingWeight * (env.gamma * phi - phi)
+        assert idle <= 0.0, f"an unchanged position must not pay, phi={phi}"
 
 
 def test_potential_rises_as_the_agent_advances():
