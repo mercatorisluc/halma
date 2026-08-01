@@ -66,11 +66,24 @@ class HalmaEnv(gym.Env):
 
         self.actionCount = self.fieldCount**2
         self.action_space = spaces.Discrete(self.actionCount)
-        # Two binary planes (own pieces, opponent pieces) followed by the
-        # scalars described in _observation, all scaled into [0, 1].
-        self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(2 * self.fieldCount + 4,), dtype=np.float32
+        # Field id -> (row, col) on the 17x17 raster, in the canonical frame.
+        # fieldNumber already embeds the hex board there, which is why the
+        # board can be handed to a convolution at all.
+        self.rasterIndex = np.array(
+            [self._rasterCell(field.coord) for field in self.game.board.fields]
         )
+        self.observation_space = spaces.Dict(
+            {
+                # Own pieces, opponent pieces, and which cells of the 17x17
+                # square are real fields at all -- 168 of 289 are not, and
+                # without that plane a convolution cannot tell an empty field
+                # from the void outside the star.
+                "board": spaces.Box(low=0.0, high=1.0, shape=(3, 17, 17), dtype=np.float32),
+                "scalars": spaces.Box(low=0.0, high=1.0, shape=(4,), dtype=np.float32),
+            }
+        )
+        self.boardMask = np.zeros((17, 17), dtype=np.float32)
+        self.boardMask[self.rasterIndex[:, 0], self.rasterIndex[:, 1]] = 1.0
 
     # ------------------------------------------------------------------ setup
 
@@ -90,7 +103,7 @@ class HalmaEnv(gym.Env):
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
-    ) -> tuple[np.ndarray, dict[str, Any]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         super().reset(seed=seed)
         # The engine has its own generator; seeding it is what makes a whole
         # episode reproducible, since seat order and the opponent's tie-breaks
@@ -102,7 +115,7 @@ class HalmaEnv(gym.Env):
         self.previousPotential = self._potential()
         return self._observation(), self._info()
 
-    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, action: int) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         if not self._isAgentsTurn():
             raise RuntimeError("step() called when it is not the agent's turn")
 
@@ -190,12 +203,9 @@ class HalmaEnv(gym.Env):
         return shifts by exactly ``-phi(s0)`` as the theory says, to machine
         precision.
 
-        Note ``terminated`` and not "the episode stopped". A game cut off at
-        ``MAX_MOVES`` is truncated, not over, and its potential is deliberately
-        *not* zeroed -- the agent should bootstrap from that state's value, as
-        it would from any other. The exact relation above therefore does not
-        hold for truncated episodes, which is a property of time limits rather
-        than of the shaping.
+        Running out of moves counts as terminating here, because the cap is one
+        of the game's rules rather than a harness time limit: the game really is
+        over, so the potential is zeroed like any other ending.
         """
         potential = 0.0 if terminated else self._potential()
         shaping = self.shapingWeight * (self.gamma * potential - self.previousPotential)
@@ -260,21 +270,43 @@ class HalmaEnv(gym.Env):
         occupied = np.where(self.board.boardState() == seat)[0]
         return bool(np.sum(self.normalizer.sumCoordsX(occupied)) < 0)
 
-    def _observation(self) -> np.ndarray:
-        """Board planes plus scalars, from the agent's point of view.
+    @staticmethod
+    def _rasterCell(coord: tuple[int, int]) -> tuple[int, int]:
+        """Where a field sits on the 17x17 square, as (row, col).
 
-        Layout: ``[own pieces (121), opponent pieces (121), progress, own
-        pieces home, opponent pieces home, mobility]``. The zones themselves
-        are deliberately absent -- after normalisation the start zone is always
-        fields 0-14 and the target 102-120, so they are constant and carry no
-        information.
+        This is ``fieldNumber`` split back into its two halves -- that scheme
+        embeds the hex board in a square grid, which is exactly what a
+        convolution needs.
+        """
+        x, y = coord
+        return y + 8, x + 8
+
+    def _observation(self) -> dict[str, np.ndarray]:
+        """The board as a 17x17 picture plus a few scalars, agent's view.
+
+        Laid out spatially rather than as a flat vector so a convolution can
+        see that neighbouring fields are neighbours. A flat vector hides that,
+        leaving the network to learn adjacency from data it does not have.
+
+        Planes: own pieces, opponent pieces, and which cells are real fields --
+        168 of the 289 squares are outside the star, and without that plane an
+        empty field and the void look identical.
+
+        Scalars: progress through the move budget, own pieces home, opponent
+        pieces home, mobility. The zones are deliberately absent: after
+        normalisation the start is always fields 0-14 and the target 102-120,
+        so they are constant and carry nothing.
         """
         agent = self._player(self.AGENT_SEAT)
         opponent = self._player(self.OPPONENT_SEAT)
         state = self.normalizer.permute(self.board.boardState(), self._permutationKey(agent))
 
-        own = (state == self.AGENT_SEAT).astype(np.float32)
-        other = (state == self.OPPONENT_SEAT).astype(np.float32)
+        board = np.zeros((3, 17, 17), dtype=np.float32)
+        rows, cols = self.rasterIndex[:, 0], self.rasterIndex[:, 1]
+        board[0, rows, cols] = (state == self.AGENT_SEAT).astype(np.float32)
+        board[1, rows, cols] = (state == self.OPPONENT_SEAT).astype(np.float32)
+        board[2] = self.boardMask
+
         scalars = np.array(
             [
                 self.game.gameLength() / self.game.MAX_MOVES,
@@ -284,7 +316,7 @@ class HalmaEnv(gym.Env):
             ],
             dtype=np.float32,
         )
-        return np.concatenate([own, other, scalars])
+        return {"board": board, "scalars": scalars}
 
     def _info(self, illegalAction: bool = False, outcome: float = 0.0) -> dict[str, Any]:
         # outcome is the unshaped result, +1/-1/0. Evaluation must read this

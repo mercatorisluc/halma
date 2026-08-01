@@ -23,6 +23,7 @@ from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
 
+from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
@@ -150,7 +151,14 @@ def main() -> None:
         report(f"vs {opponent}", evaluate(None, opponent, args.games))
 
     print("\ntraining (ep_rew_mean includes shaping; the wins line does not):", flush=True)
-    model = MaskablePPO("MlpPolicy", env, gamma=args.gamma, seed=args.seed, verbose=1)
+    model = MaskablePPO(
+        "MultiInputPolicy",
+        env,
+        gamma=args.gamma,
+        seed=args.seed,
+        verbose=1,
+        policy_kwargs={"features_extractor_class": HalmaFeatures},
+    )
     model.learn(
         total_timesteps=args.steps,
         progress_bar=False,
