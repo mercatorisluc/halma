@@ -24,14 +24,35 @@ def test_simple_dist_score_dispatches_to_the_simple_formula(board, player):
 
 def test_sparsity_score_dispatches_to_the_combined_formula(board, player):
     strategy = Strategy("sparsityScore")
-    expected = (
-        board.advancedDistanceScore(player)
-        + board.sparsityScore(player)
+    home = board.homeBonusScore(player)
+    shape = (
+        board.sparsityScore(player)
         + board.playerSparsityScore(player)
         + board.potentialJumpScore(player)
-        + board.homeBonusScore(player)
     )
+    expected = board.advancedDistanceScore(player) + home + home * shape
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
+
+
+def test_sparsity_shape_terms_vanish_once_every_piece_is_home(board, game):
+    # The endgame fix: the shape terms are opening advice and used to outvote
+    # progress, leaving the bot unable to place its last pieces. Scaled by
+    # homeBonusScore they fall away entirely once the target is full.
+    player = game.players[0]
+    for field in board.fields:
+        if field.playerID == player.identifier:
+            field.removePlayer()
+    for target in player.endPositions:
+        board.fields[target].playerID = player.identifier
+    player.positions = set(player.endPositions)
+    player.nonArrived = set()
+    player.openEndPositions = set()
+    player.distanceScore = board.calculatePlayerDistanceScore(player)
+
+    assert board.homeBonusScore(player) == 0.0
+    assert Strategy("sparsityScore").scoringFunction(board, player) == pytest.approx(
+        board.advancedDistanceScore(player)
+    )
 
 
 def test_bottleneck_dispatches_to_advanced_dist_plus_the_straggler(board, player):
