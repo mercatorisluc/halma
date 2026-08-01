@@ -9,6 +9,10 @@ __pycache__/
 venv/
 env/.venv/
 
+# Trained agents. Binary, regenerable with scripts/train.py, and they would
+# bloat the history -- the numbers that matter live in commit messages.
+models/*.zip
+
 # OS
 .DS_Store
 

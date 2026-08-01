@@ -4,6 +4,11 @@ numpy>=1.24
 # 1.0 changed the core API (step returns 5 values, reset returns (obs, info)).
 # env/ targets that API, so do not fall back to the 0.x line.
 gymnasium>=1.0
+# Masked PPO. Only ~65 of 14641 encoded actions are legal at a time, so plain
+# PPO would spend itself learning which actions are illegal. Pulls in
+# stable-baselines3 and torch (~530 MB) -- not needed to play the game, only to
+# train an agent.
+sb3-contrib>=2.9
 
 # Development / testing
 pytest>=8.0

@@ -1,0 +1,171 @@
+"""Train a masked PPO agent on Halma and report whether it beat the baseline.
+
+    python -m scripts.train --steps 200000
+
+Masking is not optional here: only ~65 of 14641 encoded actions are legal in a
+typical position, so an unmasked policy would spend itself learning which
+actions are illegal rather than which are good. ``MaskablePPO`` picks up
+``HalmaEnv.action_masks`` on its own.
+
+Success is measured on ``info["outcome"]`` -- the unshaped win or loss -- never
+on the reward, which includes shaping and would flatter the agent.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+from pathlib import Path
+from typing import cast
+
+import numpy as np
+from sb3_contrib import MaskablePPO
+from sb3_contrib.common.maskable.utils import get_action_masks
+from stable_baselines3.common.callbacks import BaseCallback
+
+from env.halmaEnv import HalmaEnv
+
+MODELS = Path(__file__).resolve().parent.parent / "models"
+
+
+class ProgressReport(BaseCallback):
+    """Print the honest win rate every ``every`` steps, so a run is watchable.
+
+    Stable-Baselines' own log shows ``ep_rew_mean``, which includes shaping and
+    therefore rises when the agent merely advances. That is worth seeing, but it
+    is not the thing being optimised for, so this measures actual games as well.
+    """
+
+    def __init__(self, opponent: str, every: int = 25_000, games: int = 20) -> None:
+        super().__init__()
+        self.opponent = opponent
+        self.every = every
+        self.games = games
+        self.nextAt = every
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps >= self.nextAt:
+            self.nextAt += self.every
+            # self.model is typed as the base algorithm; here it is always the
+            # MaskablePPO being trained, whose predict() takes action_masks.
+            model = cast("MaskablePPO", self.model)
+            result = evaluate(model, self.opponent, self.games, seed=90_000)
+            print(
+                f"  [{self.num_timesteps:>7,} steps]"
+                f"  wins {result['winRate'] * 100:5.1f} %"
+                f"  pieces home {result['homeFraction'] * 100:5.1f} %"
+                f"  {result['avgSteps']:.0f} steps/game",
+                flush=True,
+            )
+        return True
+
+
+def evaluate(model: MaskablePPO | None, opponent: str, games: int, seed: int = 10_000) -> dict:
+    """Play out games and count wins by outcome, not by reward.
+
+    ``model=None`` plays uniformly at random, which is the floor to clear: a
+    random agent wins none of 700 games against any of the bots.
+    """
+    wins = losses = draws = 0
+    steps = 0
+    homeFractions = []
+    for i in range(games):
+        env = HalmaEnv(opponentStrategy=opponent)
+        obs, _ = env.reset(seed=seed + i)
+        rng = np.random.default_rng(seed + i)
+        while True:
+            if model is None:
+                legal = np.flatnonzero(env.action_masks())
+                action = int(rng.choice(legal))
+            else:
+                action, _ = model.predict(
+                    obs, action_masks=get_action_masks(env), deterministic=True
+                )
+                action = int(action)
+            obs, _, terminated, truncated, info = env.step(action)
+            steps += 1
+            if terminated or truncated:
+                if info["outcome"] > 0:
+                    wins += 1
+                elif info["outcome"] < 0:
+                    losses += 1
+                else:
+                    draws += 1
+                agent = env._player(env.AGENT_SEAT)
+                homeFractions.append(
+                    len(agent.positions & agent.endPositions) / len(agent.endPositions)
+                )
+                break
+    rate = wins / games
+    return {
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "winRate": rate,
+        "marginOfError": 1.96 * math.sqrt(max(rate * (1 - rate), 1e-9) / games),
+        "avgSteps": steps / games,
+        # Pieces home when the game ended. The win rate is expected to sit at
+        # zero for a long while, so this is what shows whether the agent is
+        # learning to advance at all -- it moves long before wins appear.
+        "homeFraction": float(np.mean(homeFractions)),
+    }
+
+
+def report(label: str, result: dict) -> None:
+    print(
+        f"  {label:<24} {result['winRate'] * 100:5.1f} % +/- {result['marginOfError'] * 100:4.1f}"
+        f"   pieces home {result['homeFraction'] * 100:4.1f} %"
+        f"   ({result['wins']}W {result['losses']}L {result['draws']}D,"
+        f" {result['avgSteps']:.0f} steps)"
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--steps", type=int, default=100_000, help="training timesteps")
+    parser.add_argument("--opponent", default="advancedDistScore")
+    parser.add_argument("--games", type=int, default=100, help="evaluation games")
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--shaping", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--name", default="maskedPPO")
+    parser.add_argument(
+        "--reportEvery", type=int, default=25_000, help="steps between progress reports"
+    )
+    args = parser.parse_args()
+
+    # The env's shaping discount has to be the one PPO trains with, or the
+    # shaping stops being policy-invariant.
+    env = HalmaEnv(opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma)
+
+    # Evaluated against the bot it trained on and against the weaker ones:
+    # progress is likely to show against a weak opponent well before it shows
+    # against the one it is being beaten by.
+    opponents = [args.opponent, "sparsityScore", "random"]
+    opponents = list(dict.fromkeys(opponents))
+
+    print(f"opponent {args.opponent}, {args.steps} steps, gamma {args.gamma}\n")
+    print("before training (random agent):")
+    for opponent in opponents:
+        report(f"vs {opponent}", evaluate(None, opponent, args.games))
+
+    print("\ntraining (ep_rew_mean includes shaping; the wins line does not):", flush=True)
+    model = MaskablePPO("MlpPolicy", env, gamma=args.gamma, seed=args.seed, verbose=1)
+    model.learn(
+        total_timesteps=args.steps,
+        progress_bar=False,
+        callback=ProgressReport(args.opponent, every=args.reportEvery),
+    )
+
+    MODELS.mkdir(exist_ok=True)
+    path = MODELS / args.name
+    model.save(path)
+
+    print("\nafter training:")
+    for opponent in opponents:
+        report(f"vs {opponent}", evaluate(model, opponent, args.games))
+    print(f"\nsaved to {path}.zip")
+
+
+if __name__ == "__main__":
+    main()

@@ -30,6 +30,12 @@ ruff format --check .
 
 # Type check (must stay clean)
 basedpyright .
+
+# Bot strength: every pairing of the heuristics (the yardstick)
+python -m scripts.baseline --games 150
+
+# Train a masked PPO agent and score it against that yardstick
+python -m scripts.train --steps 300000 --games 50
 ```
 
 All four must stay green; there is no build step. The pre-commit hook in
