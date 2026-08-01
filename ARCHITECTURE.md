@@ -235,14 +235,30 @@ moves.
 `HalmaEnv` wraps a `ComputedGame` as a Gymnasium environment. Actions are
 encoded as `start * fieldCount + end`.
 
-The interesting part is `boardNormalizer.Normalizer`. The board is symmetric, so
-it precomputes field-id permutations for each player's viewpoint
-(`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map any
-player/orientation into one canonical frame. The intent is that a single policy
-can learn from a symmetry-reduced state space instead of learning each
-orientation separately.
+Gymnasium models one agent against a world; Halma has two players. So the agent
+owns one seat and the heuristic opponent moves *inside* `step` — one env step is
+a full round. Only ~65 of 14641 encoded actions are legal at a time, so
+`action_masks()` is not optional: without it the policy would spend itself
+learning which actions are illegal rather than which are good.
 
-> **Status:** this layer is scaffolding, not working code. See *Current state*.
+`boardNormalizer.Normalizer` precomputes field-id permutations for each player's
+viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
+any player/orientation into one canonical frame, so a single policy learns one
+orientation rather than several.
+
+**The reward is shaped, and it has to be.** Winning is the only true reward and
+it arrives once per ~69 decisions — and a random agent, measured over 700 games,
+never wins at all. A constant signal teaches nothing, so `_shaping` adds
+`weight * (gamma * phi(s') - phi(s))` on every step, where the potential is the
+agent's lead over the opponent. This is the potential-based form (Ng, Harada &
+Russell 1999) whose terms telescope, so it changes no policy's ranking — the
+agent is hurried, not redirected. Verified over 32 completed games: the
+discounted return shifts by exactly `-phi(s0)`, to machine precision. Two
+conditions: `gamma` must match the training discount, and the potential is zeroed
+on termination but deliberately *not* on time-limit truncation, where the agent
+should still bootstrap. Set `shapingWeight=0` to turn it off and measure whether
+it earns its place. `info["outcome"]` carries the unshaped ±1 so evaluation
+scores wins rather than shaping.
 
 ---
 
@@ -336,19 +352,26 @@ once at setup so the heuristics can look up any pair in O(1).
 | Area | State |
 |---|---|
 | `game/` | Refactored, documented, characterization-tested |
-| `heuristics/` | Working; the only functioning bots today |
+| `heuristics/` | Working; five bots, strength measured against each other |
 | `visual/` | Working; refactored into focused modules. No tests |
-| `env/` | **Scaffolding — does not satisfy the Gymnasium API.** No tests |
+| `env/` | Satisfies the Gymnasium API, masked and shaped. No agent trained yet |
 
-`env/` is the next thing to be built, and it is genuinely broken rather than
-merely incomplete: `action_space` is missing entirely (there is a `reward_space`
-that is not a Gymnasium concept), `reset()` returns a 4-tuple instead of
-`(obs, info)`, `step()` takes `(player, permutationKey, action)` instead of
-`step(action)` and returns 4 values instead of 5, and move selection is a random
-choice (`dummyNN`). `models/` is empty. `gymnasium.utils.env_checker.check_env`
-rejects the environment on the first check.
+`env/` passes `gymnasium.utils.env_checker.check_env` and has action masking, a
+canonical observation and reproducible seeding. `models/` is still empty: no
+policy has been trained.
 
-The planned direction is: fix the env to the Gymnasium 1.x API, train a
-self-play PPO agent against the existing heuristic bots as a baseline, then
-replace the pygame front-end with a browser-based one (backend around the
-unchanged engine + a canvas front-end).
+`scripts/baseline.py` plays every pairing of the bots and is the yardstick a
+trained agent has to clear. The number that shapes the plan: **a random agent
+wins none of 700 games**, so an untrained policy sees the same reward in
+essentially every episode. That is why shaping came before training.
+
+The planned direction from here: train a masked PPO agent against
+`advancedDistScore` — not against the strongest bot, which is both too slow and
+too hard a first opponent — and score it on `info["outcome"]` against the
+baseline. If it plateaus weak, escalate to self-play and then to search. Two
+things are already agreed for later: giving the network the board's geometry
+(the `fieldNumber` 17×17 raster suits a CNN) and making position evaluation
+parallelisable, which today's `moveApplied` prevents.
+
+After that, replace the pygame front-end with a browser-based one — a backend
+around the unchanged engine plus a canvas front-end.
