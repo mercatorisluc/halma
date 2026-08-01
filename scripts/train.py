@@ -50,7 +50,10 @@ class ProgressReport(BaseCallback):
             # self.model is typed as the base algorithm; here it is always the
             # MaskablePPO being trained, whose predict() takes action_masks.
             model = cast("MaskablePPO", self.model)
-            result = evaluate(model, self.opponent, self.games, seed=90_000)
+            # Sampled, not argmax: the argmax of a half-trained policy is a
+            # degenerate fixed rule and says nothing about progress. Measured
+            # on the same model: argmax 0.5% pieces home, sampled 3.7%.
+            result = evaluate(model, self.opponent, self.games, seed=90_000, deterministic=False)
             print(
                 f"  [{self.num_timesteps:>7,} steps]"
                 f"  wins {result['winRate'] * 100:5.1f} %"
@@ -61,7 +64,13 @@ class ProgressReport(BaseCallback):
         return True
 
 
-def evaluate(model: MaskablePPO | None, opponent: str, games: int, seed: int = 10_000) -> dict:
+def evaluate(
+    model: MaskablePPO | None,
+    opponent: str,
+    games: int,
+    seed: int = 10_000,
+    deterministic: bool = True,
+) -> dict:
     """Play out games and count wins by outcome, not by reward.
 
     ``model=None`` plays uniformly at random, which is the floor to clear: a
@@ -80,7 +89,7 @@ def evaluate(model: MaskablePPO | None, opponent: str, games: int, seed: int = 1
                 action = int(rng.choice(legal))
             else:
                 action, _ = model.predict(
-                    obs, action_masks=get_action_masks(env), deterministic=True
+                    obs, action_masks=get_action_masks(env), deterministic=deterministic
                 )
                 action = int(action)
             obs, _, terminated, truncated, info = env.step(action)
@@ -129,6 +138,10 @@ def main() -> None:
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--shaping", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=0)
+    # sb3 defaults this to 0. With a per-step signal this small the policy
+    # can collapse onto an arbitrary subset of moves before the reward has
+    # said anything, which would end below random -- as it did.
+    parser.add_argument("--entropy", type=float, default=0.01)
     parser.add_argument("--name", default="maskedPPO")
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
@@ -155,6 +168,7 @@ def main() -> None:
         "MultiInputPolicy",
         env,
         gamma=args.gamma,
+        ent_coef=args.entropy,
         seed=args.seed,
         verbose=1,
         policy_kwargs={"features_extractor_class": HalmaFeatures},
@@ -169,9 +183,13 @@ def main() -> None:
     path = MODELS / args.name
     model.save(path)
 
-    print("\nafter training:")
+    print("\nafter training (argmax, then sampled):")
     for opponent in opponents:
         report(f"vs {opponent}", evaluate(model, opponent, args.games))
+        report(
+            "   sampled",
+            evaluate(model, opponent, args.games, deterministic=False),
+        )
     print(f"\nsaved to {path}.zip")
 
 
