@@ -69,21 +69,24 @@ def test_shaping_does_not_change_which_policy_is_optimal(seed):
     )
 
 
-def test_shaping_stays_smaller_than_winning():
-    # If progress outweighed the result, the agent would learn to advance
-    # rather than to win.
+def test_shaping_stays_comparable_to_winning():
+    # The potential is normalised so a whole episode's shaping sums to about 1,
+    # the same order as the +/-1 for the result. Progress has to be worth
+    # something -- an agent that never wins learns from nothing else -- but not
+    # so much that the result stops mattering. Unnormalised it would be ~7.7.
     shaped, _, _ = playRandomEpisode(HalmaEnv(shapingWeight=1.0, gamma=GAMMA), seed=0)
     plain, _, _ = playRandomEpisode(HalmaEnv(shapingWeight=0.0, gamma=GAMMA), seed=0)
-    assert abs(discountedReturn(shaped) - discountedReturn(plain)) < 1.0
+    assert abs(discountedReturn(shaped) - discountedReturn(plain)) < 1.5
 
 
-def test_potential_favours_the_leader():
-    # Higher is better for the agent, so handing the opponent the whole game
-    # has to lower it.
+def test_potential_measures_own_progress_only():
+    # It has to answer "how far along am I", not "how far ahead am I".
+    # Rewarding a lead lets the agent hold it by obstructing, which is what an
+    # earlier version learned to do instead of playing.
     env = HalmaEnv()
     env.reset(seed=0)
-    even = env._potential()
-    assert even == pytest.approx(0.0, abs=0.5), "an even opening should sit near zero"
+    opening = env._potential()
+    assert opening == pytest.approx(-1.0), "normalised so the opening sits at -1"
 
     opponent = env._player(env.OPPONENT_SEAT)
     for field in env.board.fields:
@@ -95,12 +98,48 @@ def test_potential_favours_the_leader():
     opponent.nonArrived = set()
     opponent.openEndPositions = set()
     # distanceScore is maintained incrementally, so moving pieces by hand
-    # leaves it stale -- and a stale one here reads as a huge opponent score,
-    # flipping the sign of the potential. Recompute it, the way
-    # prepareForGameStart does.
+    # leaves it stale. Recompute it, the way prepareForGameStart does.
     opponent.distanceScore = env.board.calculatePlayerDistanceScore(opponent)
 
-    assert env._potential() < even
+    assert env._potential() == pytest.approx(opening), "the opponent must not move it"
+
+
+def test_potential_rises_as_the_agent_advances():
+    env = HalmaEnv()
+    env.reset(seed=0)
+    before = env._potential()
+    agent = env._player(env.AGENT_SEAT)
+    for field in env.board.fields:
+        if field.playerID == agent.identifier:
+            field.removePlayer()
+    for target in agent.endPositions:
+        env.board.fields[target].playerID = agent.identifier
+    agent.positions = set(agent.endPositions)
+    agent.nonArrived = set()
+    agent.openEndPositions = set()
+    agent.distanceScore = env.board.calculatePlayerDistanceScore(agent)
+
+    assert env._potential() > before
+
+
+def test_running_out_of_moves_costs_as_much_as_losing():
+    # Stalling used to score 0 against -1 for losing, so it was strictly the
+    # better play and an agent found that out.
+    env = HalmaEnv()
+    env.reset(seed=0)
+    env.game.MAX_MOVES = 8  # far too few to finish, so the cap is what stops it
+    rng = np.random.default_rng(0)
+    while True:
+        legal = np.flatnonzero(env.action_masks())
+        _, _, terminated, truncated, info = env.step(int(rng.choice(legal)))
+        if terminated or truncated:
+            break
+    assert env.game.winner() is None, "the cap should have stopped it, not a win"
+    assert info["outcome"] == -1.0
+    # The move cap is a rule of the game, so it ends the episode outright
+    # rather than cutting it short with something left to bootstrap from.
+    assert terminated
+    assert not truncated
 
 
 def test_info_reports_the_unshaped_outcome():

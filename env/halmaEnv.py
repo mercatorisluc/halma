@@ -59,6 +59,10 @@ class HalmaEnv(gym.Env):
         self._seatPlayers()
         self.fieldCount = len(self.game.board.fields)
         self.normalizer = Normalizer(self.game.board)
+        # Fixed scale for the potential. The opening is identical every game,
+        # so this is a constant, not per-episode state -- the shaping would
+        # stop telescoping if it moved during a game.
+        self.openingProgress = self._progress(self._player(self.AGENT_SEAT))
 
         self.actionCount = self.fieldCount**2
         self.action_space = spaces.Discrete(self.actionCount)
@@ -114,17 +118,30 @@ class HalmaEnv(gym.Env):
             self._playOpponentUntilAgentsTurn()
 
         winner = self.game.winner()
-        terminated = winner is not None
-        truncated = not terminated and self.game.gameLength() >= self.game.MAX_MOVES
-        outcome = 0.0
-        if terminated:
+        outOfMoves = winner is None and self.game.gameLength() >= self.game.MAX_MOVES
+        # The move cap is one of the game's own rules, not a harness time limit,
+        # so running it out ends the episode rather than cutting it short --
+        # there is nothing left to bootstrap from.
+        terminated = winner is not None or outOfMoves
+
+        if winner is not None:
             outcome = 1.0 if winner == self.AGENT_SEAT else -1.0
+        elif outOfMoves:
+            # Priced as a loss. Scoring 0 against -1 for losing made stalling
+            # strictly the better play, and an agent duly found it: it ended
+            # with 0 of 15 pieces home while holding the opponent back from 14
+            # to 12. Nobody reaching the target is not a better result than
+            # losing.
+            outcome = -1.0
+        else:
+            outcome = 0.0
+
         reward = outcome + self._shaping(terminated)
         return (
             self._observation(),
             reward,
             terminated,
-            truncated,
+            False,
             self._info(outcome=outcome),
         )
 
@@ -138,17 +155,20 @@ class HalmaEnv(gym.Env):
         return self.board.advancedDistanceScore(player) + self.board.homeBonusScore(player)
 
     def _potential(self) -> float:
-        """How good the position is for the agent. Higher is better.
+        """How good the position is for the agent, in roughly [-1, 0].
 
-        The lead over the opponent, not the agent's own progress alone --
-        falling behind has to lower it, or the agent is rewarded for advancing
-        while losing. Being a difference between two comparable players it
-        stays small, roughly -0.3 to +0.7, and starts at 0 from an even board.
+        The agent's own progress, and deliberately not its lead over the
+        opponent. A lead can be held just as well by holding the opponent back
+        as by advancing, and an agent trained on the difference took exactly
+        that route: it finished with none of its 15 pieces home -- fewer than a
+        random player -- while keeping the opponent from 14 down to 12. Only
+        real progress of its own moves this.
+
+        Divided by the progress left at the opening, so the whole episode's
+        shaping sums to about 1 and stays comparable to the +/-1 for the result.
+        Unnormalised it is around 7.7, which would drown the result out.
         """
-        return -(
-            self._progress(self._player(self.AGENT_SEAT))
-            - self._progress(self._player(self.OPPONENT_SEAT))
-        )
+        return -self._progress(self._player(self.AGENT_SEAT)) / self.openingProgress
 
     def _shaping(self, terminated: bool) -> float:
         """Potential-based shaping: ``weight * (gamma * phi(s') - phi(s))``.

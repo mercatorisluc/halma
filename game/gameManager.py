@@ -17,9 +17,10 @@ class HalmaGame:
     which players they seat.
     """
 
-    # Cut a bot-vs-bot game off after this many moves so a stalemate between
-    # two heuristics cannot loop forever.
-    MAX_MOVES = 250
+    # Cut a game off after this many moves so a stalemate between two
+    # heuristics cannot loop forever. Overridable per game -- tests shorten it
+    # to reach the cap quickly.
+    MAX_MOVES: int = 250
 
     def __init__(self) -> None:
         self.initializer = Initializer()
