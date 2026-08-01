@@ -22,6 +22,7 @@ import numpy as np
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.utils import get_action_masks
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
@@ -143,6 +144,12 @@ def main() -> None:
     # can collapse onto an arbitrary subset of moves before the reward has
     # said anything, which would end below random -- as it did.
     parser.add_argument("--entropy", type=float, default=0.01)
+    # Defaults to 1 because parallel environments measured no real gain here:
+    # 114 steps/s on one against 123 on eight, on a 10-core machine. MaskablePPO
+    # fetches the action mask from every worker on every step, and that IPC
+    # eats what the parallelism wins. The flag stays because the picture would
+    # change with a heavier network or a cheaper mask.
+    parser.add_argument("--envs", type=int, default=1, help="parallel environments")
     parser.add_argument("--name", default="maskedPPO")
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
@@ -151,7 +158,19 @@ def main() -> None:
 
     # The env's shaping discount has to be the one PPO trains with, or the
     # shaping stops being policy-invariant.
-    env = HalmaEnv(opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma)
+    def makeEnv(rank: int):
+        def build() -> HalmaEnv:
+            return HalmaEnv(
+                opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma
+            )
+
+        return build
+
+    env = (
+        SubprocVecEnv([makeEnv(i) for i in range(args.envs)])
+        if args.envs > 1
+        else HalmaEnv(opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma)
+    )
 
     # Evaluated against the bot it trained on and against the weaker ones:
     # progress is likely to show against a weak opponent well before it shows
