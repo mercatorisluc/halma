@@ -25,6 +25,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
+from env.policy import FactoredMaskablePolicy
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
 
@@ -165,7 +166,7 @@ def main() -> None:
 
     print("\ntraining (ep_rew_mean includes shaping; the wins line does not):", flush=True)
     model = MaskablePPO(
-        "MultiInputPolicy",
+        FactoredMaskablePolicy,
         env,
         gamma=args.gamma,
         ent_coef=args.entropy,
