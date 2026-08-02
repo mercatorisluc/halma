@@ -54,6 +54,8 @@ class HalmaEnv(gym.Env):
         self.shapingWeight = shapingWeight
         self.gamma = gamma
         self.previousPotential = 0.0
+        # (position version, encoded legal moves) -- see _legalActions.
+        self._legalCache: tuple[int, list[int]] | None = None
 
         self.game = ComputedGame()
         self._seatPlayers()
@@ -114,6 +116,9 @@ class HalmaEnv(gym.Env):
         # both draw from it.
         self.game.seed(seed)
         self._seatPlayers()
+        # A new game restarts the move count, so last episode's entry would
+        # look current.
+        self._legalCache = None
         # Play order is randomised, so the opponent may be on move first.
         self._playOpponentUntilAgentsTurn()
         self.previousPotential = self._potential()
@@ -287,10 +292,43 @@ class HalmaEnv(gym.Env):
         return mask
 
     def _legalActions(self) -> list[int]:
+        """Encoded legal moves for whoever is on turn, memoised per position.
+
+        Generating them is the single most expensive thing the environment
+        does, and one env step used to ask for them five times: the caller's
+        ``action_masks()``, ``step``'s legality check, the opponent's own
+        search, the mobility scalar in ``_observation``, and ``action_masks()``
+        again inside ``_info``. Only two of those are separate positions.
+
+        ``gameLength()`` is the position's version: every real move goes
+        through ``playMove``, which appends to the move list, and
+        ``currentPlayer()`` is itself derived from that count. Scoring a
+        candidate move does *not* bump it -- ``moveApplied`` goes straight to
+        the board -- but scoring never calls this either. The one thing that
+        would fool the cache is hand-placing pieces without playing a move,
+        which only tests do.
+        """
+        version = self.game.gameLength()
+        if self._legalCache is not None and self._legalCache[0] == version:
+            return self._legalCache[1]
         player = self.game.currentPlayer()
         moves = self.board.allValidMoves(player)
         normalized = self.normalizer.permuteMoves(moves, self._permutationKey(player))
-        return [self.encodeAction(move) for move in normalized]
+        actions = [self.encodeAction(move) for move in normalized]
+        self._legalCache = (version, actions)
+        return actions
+
+    def _agentMobility(self) -> int:
+        """How many moves the agent has. Free while the agent is on turn.
+
+        Which is the normal case: the observation is built at the end of a
+        step, with the opponent's reply already played. Only a terminal
+        position can leave someone else on turn, and there it is worth one
+        generation rather than complicating the scalar's meaning.
+        """
+        if self._isAgentsTurn():
+            return len(self._legalActions())
+        return len(self.board.allValidMoves(self._player(self.AGENT_SEAT)))
 
     def encodeAction(self, move: MoveEndpoints) -> int:
         return int(move[0]) * self.fieldCount + int(move[-1])
@@ -372,7 +410,7 @@ class HalmaEnv(gym.Env):
                 self.game.gameLength() / self.game.MAX_MOVES,
                 len(agent.positions & agent.endPositions) / PIECES_PER_PLAYER,
                 len(opponent.positions & opponent.endPositions) / PIECES_PER_PLAYER,
-                min(len(self.board.allValidMoves(agent)), self.fieldCount) / self.fieldCount,
+                min(self._agentMobility(), self.fieldCount) / self.fieldCount,
             ],
             dtype=np.float32,
         )

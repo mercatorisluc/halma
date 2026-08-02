@@ -323,6 +323,19 @@ order, so both players' `positions`, `nonArrived`, `openEndPositions` and
 that moves pieces by writing `field.playerID` directly (as some tests do
 deliberately) bypasses this and leaves the player object stale.
 
+**6. `gameLength()` is the position's version, and `HalmaEnv` caches on it.**
+Every real move goes through `playMove`, which appends to the move list, and
+`currentPlayer()` is derived from that count — so the move count identifies the
+position within an episode. `HalmaEnv._legalActions` memoises on it, because
+generating moves is the most expensive thing the environment does and one step
+used to ask five times over (the caller's `action_masks()`, `step`'s legality
+check, the opponent's search, the mobility scalar, and `action_masks()` again
+inside `_info`) for what are only two distinct positions. Scoring a candidate
+does *not* bump the count — `moveApplied` goes straight to the board — which is
+sound only because scoring never calls `_legalActions`. Hand-placing pieces
+does not bump it either, so tests that do that must not then read the mask.
+`reset` clears the entry, since a new game restarts the count.
+
 ---
 
 ## How a move actually happens

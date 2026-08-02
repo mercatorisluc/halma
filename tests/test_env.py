@@ -240,3 +240,66 @@ def test_info_reports_the_unshaped_outcome():
             assert info["outcome"] == 0.0
             return
         assert info["outcome"] == 0.0
+
+
+def test_the_legal_move_cache_never_goes_stale_during_play():
+    """The mask is memoised per position; a stale one would be silent.
+
+    An action mask that lags a move behind would not raise anything -- the
+    agent would simply be offered moves it cannot make and denied ones it can,
+    and step() would forfeit the episode as if the policy had misbehaved. So
+    this replays a whole game checking the memoised answer against a freshly
+    generated one at every step, on both sides of the move.
+    """
+    env = HalmaEnv()
+    env.reset(seed=3)
+    rng = np.random.default_rng(3)
+
+    def freshlyGenerated():
+        player = env.game.currentPlayer()
+        moves = env.board.allValidMoves(player)
+        key = env._permutationKey(player)
+        return sorted(env.encodeAction(m) for m in env.normalizer.permuteMoves(moves, key))
+
+    steps = 0
+    while True:
+        assert sorted(env._legalActions()) == freshlyGenerated()
+        legal = np.flatnonzero(env.action_masks())
+        _, _, terminated, truncated, info = env.step(int(rng.choice(legal)))
+        assert not info["illegalAction"]
+        steps += 1
+        if terminated or truncated:
+            break
+        assert sorted(env._legalActions()) == freshlyGenerated()
+    assert steps > 20
+
+
+def test_reset_clears_the_legal_move_cache():
+    """A new game restarts the move count, which is the cache key.
+
+    Deliberately a white-box assertion. The collision it guards against cannot
+    currently be caught through behaviour: reset always hands back a position
+    with the agent on turn, and the two openings that share a key are either
+    the pristine board (identical, so a stale entry is accidentally right) or
+    the board after one opponent move, which is played in the far corner and
+    never changes what the agent may do. That makes the entry unobservable
+    today and wrong the moment either holds -- if the opponent's opening
+    reached across the board, or if reset left someone else on turn. Cheaper to
+    clear it and pin that than to rely on the coincidence.
+    """
+    env = HalmaEnv()
+    env.reset(seed=1)
+    # A poisoned entry under the key the next game will open on. Without the
+    # clear, reset hands it straight back; the two real openings happen to
+    # agree, so only a planted answer shows the difference.
+    env._legalCache = (0, [12345])
+    env.reset(seed=2)
+    assert env.game.gameLength() == 0, "seed chosen so the new game shares the key"
+    assert env._legalActions() != [12345]
+    player = env.game.currentPlayer()
+    assert sorted(env._legalActions()) == sorted(
+        env.encodeAction(m)
+        for m in env.normalizer.permuteMoves(
+            env.board.allValidMoves(player), env._permutationKey(player)
+        )
+    )
