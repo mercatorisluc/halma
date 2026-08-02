@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import gymnasium as gym
@@ -38,7 +39,7 @@ class HalmaEnv(gym.Env):
     def __init__(
         self,
         agentStrategy: str = "advancedDistScore",
-        opponentStrategy: str = "sparsityScore",
+        opponentStrategy: str | Sequence[str] = "sparsityScore",
         shapingWeight: float = 1.0,
         gamma: float = 0.99,
     ) -> None:
@@ -47,7 +48,17 @@ class HalmaEnv(gym.Env):
         # well-formed; its strategy is never consulted, because moves arrive
         # through step().
         self.agentStrategy = agentStrategy
-        self.opponentStrategy = opponentStrategy
+        # A single name is the common case and keeps every existing caller
+        # unchanged; a sequence is a pool that reset() redraws from each
+        # episode, so a fine-tune does not sharpen against one opponent's
+        # blind spots at the cost of every other. self.opponentStrategy is
+        # what _seatPlayers() actually reads, so picking the initial entry
+        # here (before the first reset()'s draw) still leaves the env
+        # well-formed if it is ever used before reset() is called.
+        self.opponentPool = (
+            (opponentStrategy,) if isinstance(opponentStrategy, str) else tuple(opponentStrategy)
+        )
+        self.opponentStrategy = self.opponentPool[0]
         # gamma has to be the discount the agent is trained with, or the
         # shaping stops being policy-invariant. shapingWeight = 0 turns shaping
         # off, which is how to measure whether it is earning its keep.
@@ -114,6 +125,14 @@ class HalmaEnv(gym.Env):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         super().reset(seed=seed)
+        # Redraw the opponent before seating, so a pool of more than one
+        # strategy actually rotates -- a fixed self.opponentStrategy would
+        # otherwise stick to whichever entry __init__ happened to pick.
+        # self.np_random is seeded by super().reset() above, so this draw is
+        # reproducible along with everything else the episode does.
+        if len(self.opponentPool) > 1:
+            draw = self.np_random.integers(len(self.opponentPool))
+            self.opponentStrategy = self.opponentPool[draw]
         # The engine has its own generator; seeding it is what makes a whole
         # episode reproducible, since seat order and the opponent's tie-breaks
         # both draw from it.

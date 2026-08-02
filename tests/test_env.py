@@ -38,6 +38,36 @@ def test_env_passes_the_gymnasium_checker():
     check_env(HalmaEnv(), skip_render_check=True)
 
 
+def test_a_single_opponent_strategy_never_changes_across_resets():
+    env = HalmaEnv(opponentStrategy="bottleneck")
+    for seed in range(10):
+        env.reset(seed=seed)
+        assert env.opponentStrategy == "bottleneck"
+
+
+def test_an_opponent_pool_is_drawn_from_on_every_reset():
+    pool = ["advancedDistScore", "sparsityScore", "bottleneck"]
+    env = HalmaEnv(opponentStrategy=pool)
+    seen = set()
+    for seed in range(20):
+        env.reset(seed=seed)
+        assert env.opponentStrategy in pool
+        seen.add(env.opponentStrategy)
+    # Not a strict guarantee for any RNG, but 20 draws from 3 options landing
+    # on a single one every time would mean the draw is not happening at all.
+    assert len(seen) > 1
+
+
+def test_the_opponent_draw_is_reproducible_from_a_seed():
+    pool = ["advancedDistScore", "sparsityScore", "bottleneck"]
+    first = HalmaEnv(opponentStrategy=pool)
+    second = HalmaEnv(opponentStrategy=pool)
+    for seed in range(10):
+        first.reset(seed=seed)
+        second.reset(seed=seed)
+        assert first.opponentStrategy == second.opponentStrategy
+
+
 def test_unshaped_reward_is_almost_always_zero():
     # The problem shaping exists to solve: one signal per episode, and a random
     # agent never wins at all, so it sees nothing but the final -1.

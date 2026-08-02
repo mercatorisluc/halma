@@ -43,6 +43,11 @@ python -m scripts.pretrain --samples 150000 --epochs 12
 
 # Fine-tune that clone with PPO and score it against the yardstick
 python -m scripts.train --steps 300000 --games 200 --init models/cloned
+
+# Fine-tune against a pool of bots instead of one, so the agent does not
+# just specialise to --opponent
+python -m scripts.train --steps 300000 --init models/cloned \
+    --opponentPool advancedDistScore sparsityScore bottleneck
 ```
 
 All four must stay green; there is no build step. The pre-commit hook in

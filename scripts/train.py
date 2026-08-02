@@ -144,7 +144,20 @@ def report(label: str, result: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--steps", type=int, default=100_000, help="training timesteps")
-    parser.add_argument("--opponent", default="advancedDistScore")
+    parser.add_argument(
+        "--opponent",
+        default="advancedDistScore",
+        help="opponent tracked in progress reports and the final results",
+    )
+    parser.add_argument(
+        "--opponentPool",
+        nargs="+",
+        default=None,
+        help=(
+            "bots to train against, one drawn at random each episode "
+            "(default: --opponent alone, today's fixed-opponent behaviour)"
+        ),
+    )
     parser.add_argument("--games", type=int, default=100, help="evaluation games")
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--shaping", type=float, default=1.0)
@@ -185,12 +198,18 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Training opponents: a pool if given, else --opponent alone -- the
+    # existing fixed-opponent behaviour. Progress reports and the final
+    # results still track --opponent specifically, whether or not it is in
+    # the pool, so a pool run stays comparable to a fixed-opponent one.
+    trainingOpponents = args.opponentPool or [args.opponent]
+
     # The env's shaping discount has to be the one PPO trains with, or the
     # shaping stops being policy-invariant.
     def makeEnv(rank: int):
         def build() -> HalmaEnv:
             return HalmaEnv(
-                opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma
+                opponentStrategy=trainingOpponents, shapingWeight=args.shaping, gamma=args.gamma
             )
 
         return build
@@ -198,16 +217,21 @@ def main() -> None:
     env = (
         SubprocVecEnv([makeEnv(i) for i in range(args.envs)])
         if args.envs > 1
-        else HalmaEnv(opponentStrategy=args.opponent, shapingWeight=args.shaping, gamma=args.gamma)
+        else HalmaEnv(
+            opponentStrategy=trainingOpponents, shapingWeight=args.shaping, gamma=args.gamma
+        )
     )
 
-    # Evaluated against the bot it trained on and against the weaker ones:
-    # progress is likely to show against a weak opponent well before it shows
-    # against the one it is being beaten by.
+    # Evaluated against the bot progress is tracked on and against the weaker
+    # ones: progress is likely to show against a weak opponent well before it
+    # shows against the one it is being beaten by.
     opponents = [args.opponent, "sparsityScore", "random"]
     opponents = list(dict.fromkeys(opponents))
 
-    print(f"opponent {args.opponent}, {args.steps} steps, gamma {args.gamma}\n")
+    if len(trainingOpponents) > 1:
+        print(f"training pool {trainingOpponents}, {args.steps} steps, gamma {args.gamma}\n")
+    else:
+        print(f"opponent {args.opponent}, {args.steps} steps, gamma {args.gamma}\n")
     print("before training (random agent):")
     for opponent in opponents:
         report(f"vs {opponent}", evaluate(None, opponent, args.games))

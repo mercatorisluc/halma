@@ -258,6 +258,19 @@ a full round. Only ~65 of 14641 encoded actions are legal at a time, so
 `action_masks()` is not optional: without it the policy would spend itself
 learning which actions are illegal rather than which are good.
 
+`opponentStrategy` takes either one bot name or a sequence of them. A sequence
+is a pool: `reset()` draws one at random (from the seeded `np_random`, so the
+draw is reproducible) and that is who the agent faces for the whole episode.
+This exists because PPO fine-tuning against a single fixed bot sharpens
+against *that* bot specifically: the agent fine-tuned to 99% against
+`advancedDistScore` falls to 90–92% against random, weaker than the clone it
+started from (96%), which never trained against a fixed opponent at all —
+`scripts/pretrain.py` fits it to a bot's move choices by cross-entropy rather
+than playing against it. Training against a pool is the fix under test:
+`scripts/train.py --opponentPool` accepts several names, while `--opponent`
+still names the one bot progress reports and final results are measured
+against, whether or not it is in the pool.
+
 `boardNormalizer.Normalizer` precomputes field-id permutations for each player's
 viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
 any player/orientation into one canonical frame, so a single policy learns one
