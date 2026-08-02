@@ -395,24 +395,45 @@ once at setup so the heuristics can look up any pair in O(1).
 | `game/` | Refactored, documented, characterization-tested |
 | `heuristics/` | Working; five bots, strength measured against each other |
 | `visual/` | Working; refactored into focused modules. No tests |
-| `env/` | Satisfies the Gymnasium API, masked and shaped. No agent trained yet |
+| `env/` | Satisfies the Gymnasium API, masked and shaped |
+| Agent | A cloned policy plays at roughly bot strength. PPO on top not yet measured |
 
 `env/` passes `gymnasium.utils.env_checker.check_env` and has action masking, a
-canonical observation and reproducible seeding. `models/` is still empty: no
-policy has been trained.
+canonical observation and reproducible seeding.
 
 `scripts/baseline.py` plays every pairing of the bots and is the yardstick a
-trained agent has to clear. The number that shapes the plan: **a random agent
+trained agent has to clear. The number that shaped the plan: **a random agent
 wins none of 700 games**, so an untrained policy sees the same reward in
 essentially every episode. That is why shaping came before training.
 
-The planned direction from here: train a masked PPO agent against
-`advancedDistScore` — not against the strongest bot, which is both too slow and
-too hard a first opponent — and score it on `info["outcome"]` against the
-baseline. If it plateaus weak, escalate to self-play and then to search. Two
-things are already agreed for later: giving the network the board's geometry
-(the `fieldNumber` 17×17 raster suits a CNN) and making position evaluation
-parallelisable, which today's `moveApplied` prevents.
+**Shaping was not enough on its own.** With the reward shaped, the geometry
+given to a CNN and the action head factored, PPO from scratch still ended a
+quarter hour of training at 0 wins and single-digit percent of pieces home. The
+signal is there, but the region of policy space where Halma is played is not
+somewhere random exploration arrives.
+
+**What worked was copying a bot first.** `scripts/pretrain.py` plays games with
+`bottleneck` on the agent's seat, records its choice in every position, and fits
+the policy to those choices by cross-entropy over the masked distribution. On
+150k positions and 12 epochs the policy agrees with the bot on 73% of positions
+and goes from 0% wins to 86% against `advancedDistScore` (argmax, 50 games).
+Scored over the same games, the teacher itself takes 68% — but it wins 64% against
+`sparsityScore` where the clone takes 54%, so the clone is at roughly teacher
+strength and specialised to the opponent its data was collected against, not
+generally stronger. `scripts/train.py --init` fine-tunes from that checkpoint.
+
+Mixing the bot into PPO's *own* rollouts — playing the bot's move some fraction
+of the time — is the obvious-looking alternative and does not work:
+`collect_rollouts` stores the log-probability of the action the policy sampled,
+and the update forms `exp(log_prob - old_log_prob)` against it, so a substituted
+action leaves the ratio comparing the wrong pair of distributions and nothing
+raises. Mixing during *collection* is a real method (DAgger) but its labels come
+from the expert and its loss is the supervised one; `pretrain.py --mix --rounds`
+implements that form.
+
+From here: fine-tune the clone with PPO and see whether it clears its teacher,
+then escalate to self-play and to search. One thing agreed for later is making
+position evaluation parallelisable, which today's `moveApplied` prevents.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.

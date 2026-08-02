@@ -166,6 +166,10 @@ def main() -> None:
     # change with a heavier network or a cheaper mask.
     parser.add_argument("--envs", type=int, default=1, help="parallel environments")
     parser.add_argument("--name", default="maskedPPO")
+    # A checkpoint to start from, normally one of scripts/pretrain.py's clones.
+    # PPO from noise has nothing to learn from here; from a clone of a bot it
+    # starts inside a policy that already plays.
+    parser.add_argument("--init", default=None, help="checkpoint to fine-tune")
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
     )
@@ -199,16 +203,28 @@ def main() -> None:
         report(f"vs {opponent}", evaluate(None, opponent, args.games))
 
     print("\ntraining (ep_rew_mean includes shaping; the wins line does not):", flush=True)
-    model = MaskablePPO(
-        FactoredMaskablePolicy,
-        env,
-        gamma=args.gamma,
-        ent_coef=args.entropy,
-        n_epochs=args.epochs,
-        seed=args.seed,
-        verbose=1,
-        policy_kwargs={"features_extractor_class": HalmaFeatures},
-    )
+    settings = {
+        "gamma": args.gamma,
+        "ent_coef": args.entropy,
+        "n_epochs": args.epochs,
+        "seed": args.seed,
+        "verbose": 1,
+    }
+    if args.init:
+        print(f"  starting from {args.init}", flush=True)
+        # The clone carries the policy weights; everything else is this run's.
+        # Its value head is untrained -- pretraining fits only the action
+        # distribution -- so the first rollouts have bad advantages until the
+        # critic catches up.
+        model = MaskablePPO.load(args.init, env=env, custom_objects=settings)
+        report("  the clone, before PPO", evaluate(model, args.opponent, args.games))
+    else:
+        model = MaskablePPO(
+            FactoredMaskablePolicy,
+            env,
+            policy_kwargs={"features_extractor_class": HalmaFeatures},
+            **settings,
+        )
     model.learn(
         total_timesteps=args.steps,
         progress_bar=False,
