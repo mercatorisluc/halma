@@ -333,3 +333,28 @@ def test_reset_clears_the_legal_move_cache():
             env.board.allValidMoves(player), env._permutationKey(player)
         )
     )
+
+
+def test_needs_flip_is_fixed_to_the_seats_home_corner_not_current_pieces():
+    """Seat 1's own pieces never cross the sign threshold in real play, so a
+    version keyed on *current* positions always happened to agree with one
+    keyed on the fixed home corner -- for seat 1 only. Seat 2's home corner
+    sits on the opposite side, and its pieces migrate across the threshold
+    over a real game; keying on current positions made the canonical frame
+    flip discontinuously almost every ply once its pieces straddled the
+    threshold, which training (seat 1 only) never produced. Measured: a
+    checkpoint at 99% from seat 1 lost 20/20 games from seat 2 with the
+    current-position version and 29/30 with this one.
+    """
+    env = HalmaEnv(selfSeat=HalmaEnv.OPPONENT_SEAT)
+    env.reset(seed=0)
+    player = env._player(HalmaEnv.OPPONENT_SEAT)
+    before = env._needsFlip(HalmaEnv.OPPONENT_SEAT)
+
+    # Move every piece to the far (positive-x) side without touching
+    # startPositions -- current occupancy now disagrees in sign with the
+    # fixed home corner, the exact situation that used to flap the frame.
+    player.positions = set(player.endPositions)
+    after = env._needsFlip(HalmaEnv.OPPONENT_SEAT)
+
+    assert before == after

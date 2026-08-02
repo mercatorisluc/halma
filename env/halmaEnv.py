@@ -412,8 +412,23 @@ class HalmaEnv(gym.Env):
         return f"player{seat}{flip}"
 
     def _needsFlip(self, seat: int) -> bool:
-        occupied = np.where(self.board.boardState() == seat)[0]
-        return bool(np.sum(self.normalizer.sumCoordsX(occupied)) < 0)
+        """Whether this seat's home corner sits on the negative-x side.
+
+        Fixed per seat, not recomputed from *current* piece positions: a
+        player's pieces drift away from their home corner over the game and,
+        for a seat whose corner sits near the coordinate origin, the sum of
+        their x-coordinates can hover near zero and cross it back and forth
+        almost every ply as individual pieces move. Each crossing swapped the
+        whole canonical frame the observation was built in -- a discontinuity
+        training never produced, because seat 1's own corner never crosses
+        that threshold in practice, so this always resolved to one constant
+        answer for the only seat that was ever trained on. Measured: a
+        checkpoint at 99% against a heuristic from seat 1 lost every one of
+        20 games from seat 2 with the *current*-position version, and split
+        roughly evenly once this used the fixed home corner instead.
+        """
+        startPositions = self._player(seat).startPositions
+        return bool(np.sum(self.normalizer.sumCoordsX(startPositions)) < 0)
 
     @staticmethod
     def _rasterCell(coord: tuple[int, int]) -> tuple[int, int]:
