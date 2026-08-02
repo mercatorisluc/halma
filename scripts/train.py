@@ -158,6 +158,12 @@ def main() -> None:
             "(default: --opponent alone, today's fixed-opponent behaviour)"
         ),
     )
+    parser.add_argument(
+        "--evalOpponents",
+        nargs="+",
+        default=None,
+        help="bots to report results against (default: --opponent, sparsityScore, random)",
+    )
     parser.add_argument("--games", type=int, default=100, help="evaluation games")
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--shaping", type=float, default=1.0)
@@ -224,8 +230,9 @@ def main() -> None:
 
     # Evaluated against the bot progress is tracked on and against the weaker
     # ones: progress is likely to show against a weak opponent well before it
-    # shows against the one it is being beaten by.
-    opponents = [args.opponent, "sparsityScore", "random"]
+    # shows against the one it is being beaten by. --evalOpponents overrides
+    # this, e.g. to check a pooled run against every bot in heuristics/.
+    opponents = args.evalOpponents or [args.opponent, "sparsityScore", "random"]
     opponents = list(dict.fromkeys(opponents))
 
     if len(trainingOpponents) > 1:
