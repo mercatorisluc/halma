@@ -249,16 +249,44 @@ orientation rather than several.
 **The reward is shaped, and it has to be.** Winning is the only true reward and
 it arrives once per ~69 decisions — and a random agent, measured over 700 games,
 never wins at all. A constant signal teaches nothing, so `_shaping` adds
-`weight * (gamma * phi(s') - phi(s))` on every step, where the potential is the
-agent's lead over the opponent. This is the potential-based form (Ng, Harada &
-Russell 1999) whose terms telescope, so it changes no policy's ranking — the
-agent is hurried, not redirected. Verified over 32 completed games: the
-discounted return shifts by exactly `-phi(s0)`, to machine precision. Two
+`weight * (gamma * phi(s') - phi(s))` on every step. This is the potential-based
+form (Ng, Harada & Russell 1999) whose terms telescope, so it changes no policy's
+ranking — the agent is hurried, not redirected. Verified over 32 completed games:
+the discounted return shifts by exactly `-phi(s0)`, to machine precision. Two
 conditions: `gamma` must match the training discount, and the potential is zeroed
 on termination but deliberately *not* on time-limit truncation, where the agent
 should still bootstrap. Set `shapingWeight=0` to turn it off and measure whether
 it earns its place. `info["outcome"]` carries the unshaped ±1 so evaluation
 scores wins rather than shaping.
+
+The potential is **the agent's own remaining travel**, normalised: the sum, over
+its pieces, of the distance from each to the nearest field of its target zone,
+divided by the 140 steps facing it at the opening and subtracted from 1. So it
+runs 0 at the opening to exactly 1 once every piece is home — and, with 15 pieces
+and 15 target fields, a remaining travel of zero *is* the win condition, so the
+top of the scale coincides with winning rather than approximating it.
+
+Two things it is deliberately not:
+
+- **Not the lead over the opponent.** A lead can be held by obstructing as
+  easily as by advancing, and an agent trained on the difference took exactly
+  that route — it finished with none of its 15 pieces home while holding the
+  opponent from 14 down to 12.
+- **Not the bots' `advancedDistanceScore + homeBonusScore`.** That is what
+  `heuristics/` ranks moves by, and it is a poor thing to shape with. Two thirds
+  of it is `simpleDistanceScore`, the distance to the single *tip* field of the
+  target triangle rather than to the triangle: measured over 235 moves it moved
+  ten times further per move than the zone-distance term, so it was effectively
+  the whole signal, and it aimed at one corner. It also never bottoms out — a won
+  position still scored 1.25 against the opening's 7.69, leaving 16% of the
+  shaping budget unreachable and paying pieces already home to shuffle towards
+  the tip. Its distance term is averaged over the pieces still out, too, so a
+  piece arriving shrank the numerator and the divisor together.
+
+Nearest target field per piece, rather than a min-cost assignment of pieces to
+target fields. The assignment is the exact remaining travel, but the two
+correlate at 0.996 over real games and agree on which moves help, so it is not
+worth an O(n³) matching — or a scipy dependency — on every step.
 
 ---
 

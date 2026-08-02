@@ -59,6 +59,10 @@ class HalmaEnv(gym.Env):
         self._seatPlayers()
         self.fieldCount = len(self.game.board.fields)
         self.normalizer = Normalizer(self.game.board)
+        # Field id -> steps from there to the nearest target field. The target
+        # zone is fixed per seat, so this is a constant vector rather than
+        # something to recompute while scoring.
+        self.distanceToTarget = self._targetDistances(self._player(self.AGENT_SEAT))
         # Fixed scale for the potential. The opening is identical every game,
         # so this is a constant, not per-episode state -- the shaping would
         # stop telescoping if it moved during a game.
@@ -163,9 +167,48 @@ class HalmaEnv(gym.Env):
 
     # --------------------------------------------------------------- shaping
 
+    def _targetDistances(self, player: HalmaPlayer) -> np.ndarray:
+        """For every field, the steps from it to the nearest target field."""
+        distances = self.board.distanceMatrix
+        targets = sorted(player.endPositions)
+        return np.array(
+            [
+                min(distances[field][target] for target in targets)
+                for field in range(self.fieldCount)
+            ],
+            dtype=np.float64,
+        )
+
     def _progress(self, player: HalmaPlayer) -> float:
-        """How far this player still has to go. Lower is closer to winning."""
-        return self.board.advancedDistanceScore(player) + self.board.homeBonusScore(player)
+        """Travel this player still has to do. Lower is closer to winning.
+
+        The distance every piece not yet home still has to cover to reach the
+        target zone, summed. Pieces already home contribute nothing, so this is
+        zero exactly when the game is won -- there are 15 target fields and 15
+        pieces, so a sum of zero means each piece stands on one.
+
+        It replaces ``advancedDistanceScore + homeBonusScore``, which the bots
+        score on and which is the wrong objective to *shape* with. Two thirds of
+        that measure is ``simpleDistanceScore``, the distance to the single tip
+        field of the target triangle rather than to the zone: measured over 235
+        moves it moved 10x further per move than the zone-distance term, so it
+        was effectively the whole signal, and it pulled pieces at one corner
+        instead of into the target. It also does not bottom out -- a won
+        position still scores 1.25 of the opening's 7.69, leaving 16% of the
+        shaping budget unreachable and paying pieces already home to shuffle
+        towards the tip. This measure ends at exactly 0.
+
+        Summed, deliberately, not averaged. The old distance term divided by the
+        number of pieces still out, so a piece arriving both shrank the sum and
+        shrank the divisor, and the average could hold still on real progress.
+
+        Nearest target field per piece, rather than a min-cost assignment of
+        pieces to target fields. The assignment is the exact remaining travel,
+        but the two correlate at 0.996 over real games and agree on which moves
+        help, so it is not worth an O(n^3) matching -- or a scipy dependency --
+        on every step.
+        """
+        return float(sum(self.distanceToTarget[piece] for piece in player.positions))
 
     def _potential(self) -> float:
         """How good the position is for the agent, in roughly [-1, 0].
@@ -177,7 +220,9 @@ class HalmaEnv(gym.Env):
         random player -- while keeping the opponent from 14 down to 12. Only
         real progress of its own moves this.
 
-        Ground covered, in [0, 1]: 0 at the opening, 1 with everything home.
+        Ground covered, in [0, 1]: 0 at the opening, exactly 1 with everything
+        home. The fraction of the opening's remaining travel that the agent has
+        already walked off -- see :meth:`_progress` for what is measured.
 
         The sign is load-bearing and easy to get backwards -- an earlier version
         measured the ground *remaining*, putting the potential in [-1, 0], and
@@ -190,9 +235,10 @@ class HalmaEnv(gym.Env):
         (gamma - 1) * phi <= 0: standing still earns nothing, and dawdling near
         the goal costs a little.
 
-        Also divided by the distance facing the agent at the opening, so an
+        Also divided by the travel facing the agent at the opening, so an
         episode's shaping sums to about 1, the same order as the +/-1 for the
-        result. Unnormalised it is around 7.7 and would drown the result out.
+        result. Unnormalised the opening is 140 steps of travel, which would
+        drown the result out entirely.
         """
         remaining = self._progress(self._player(self.AGENT_SEAT))
         return 1.0 - remaining / self.openingProgress

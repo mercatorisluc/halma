@@ -140,6 +140,68 @@ def test_potential_rises_as_the_agent_advances():
     agent.distanceScore = env.board.calculatePlayerDistanceScore(agent)
 
     assert env._potential() > before
+    # Exactly 1, not merely more: the potential measures travel still to be
+    # done, and a won position has none left. The measure it replaced bottomed
+    # out at 0.84 instead, because two thirds of it was the distance to the tip
+    # field of the target triangle rather than to the triangle -- so 16% of the
+    # shaping budget was unreachable, and pieces already home were still being
+    # paid to shuffle towards the tip.
+    assert env._potential() == pytest.approx(1.0)
+
+
+def test_progress_is_zero_only_once_every_piece_is_home():
+    # 15 pieces, 15 target fields: no travel left to do means each piece stands
+    # on one of them, which is the win condition. That makes the potential's
+    # upper end coincide with winning rather than approximating it.
+    env = HalmaEnv()
+    env.reset(seed=0)
+    agent = env._player(env.AGENT_SEAT)
+    assert env._progress(agent) > 0
+
+    board = env.board
+    for field in board.fields:
+        if field.playerID == agent.identifier:
+            field.removePlayer()
+    targets = sorted(agent.endPositions)
+    # One piece short of home, parked a step outside the zone.
+    for target in targets[1:]:
+        board.fields[target].playerID = agent.identifier
+    outside = next(n for n in board.fields[targets[0]].neighbours if board.fields[n].isEmpty())
+    board.fields[outside].playerID = agent.identifier
+    agent.positions = {outside, *targets[1:]}
+    assert env._progress(agent) == pytest.approx(1.0), "one piece, one step out"
+
+    board.fields[outside].removePlayer()
+    board.fields[targets[0]].playerID = agent.identifier
+    agent.positions = set(targets)
+    assert env._progress(agent) == pytest.approx(0.0)
+
+
+def test_progress_counts_every_straggler_rather_than_averaging_them():
+    """Summed, not averaged -- the flaw in the measure this replaced.
+
+    That one divided by the number of pieces still out, so a piece arriving
+    shrank the numerator and the divisor together and the average could sit
+    still on real progress. A sum falls by the distance the piece had left,
+    every time.
+    """
+    env = HalmaEnv()
+    env.reset(seed=0)
+    agent = env._player(env.AGENT_SEAT)
+    board = env.board
+    for field in board.fields:
+        if field.playerID == agent.identifier:
+            field.removePlayer()
+
+    targets = sorted(agent.endPositions)
+    far = max(range(len(board.fields)), key=lambda f: env.distanceToTarget[f])
+    # Everything home but one straggler at the far end of the board.
+    agent.positions = {far, *targets[1:]}
+    withStraggler = env._progress(agent)
+    # The same straggler one step closer.
+    closer = min(board.fields[far].neighbours, key=lambda n: env.distanceToTarget[n])
+    agent.positions = {closer, *targets[1:]}
+    assert env._progress(agent) == pytest.approx(withStraggler - 1.0)
 
 
 def test_running_out_of_moves_costs_as_much_as_losing():
