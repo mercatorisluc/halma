@@ -9,7 +9,7 @@ from gymnasium import spaces
 from env.boardNormalizer import Normalizer
 from game.board import HalmaBoard
 from game.boardTypes import MoveEndpoints
-from game.gameManager import ComputedGame
+from game.gameManager import ComputedGame, HalmaGame
 from game.player import Computer, HalmaPlayer
 
 PIECES_PER_PLAYER = 15
@@ -57,7 +57,10 @@ class HalmaEnv(gym.Env):
         # (position version, encoded legal moves) -- see _legalActions.
         self._legalCache: tuple[int, list[int]] | None = None
 
-        self.game = ComputedGame()
+        # Declared as the base class because only its API is used here, which
+        # is what lets env/neuralPlayer.py point the same encoding at an
+        # InteractiveGame. Training makes a ComputedGame: it is the fast one.
+        self.game: HalmaGame = ComputedGame()
         self._seatPlayers()
         self.fieldCount = len(self.game.board.fields)
         self.normalizer = Normalizer(self.game.board)

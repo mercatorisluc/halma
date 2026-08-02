@@ -13,6 +13,10 @@ pip install -r requirements.txt
 # Run the interactive game (human vs. bot, pygame window)
 python main.py
 
+# Play against a trained policy instead of a heuristic bot
+python -m scripts.playAgainstAgent
+python -m scripts.playAgainstAgent --model models/tunedEnt001 --sampled
+
 # Run the whole test suite
 pytest
 

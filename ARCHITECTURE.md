@@ -24,7 +24,7 @@ graph TD
 
     H["heuristics/<br/>Strategy — scores candidate moves"]
     V["visual/<br/>pygame front-end"]
-    E["env/<br/>Gymnasium wrapper for RL"]
+    E["env/<br/>Gymnasium wrapper for RL<br/>+ NeuralComputer, a seated policy"]
 
     GM --> B & P & MV
     B --> F
@@ -40,6 +40,11 @@ graph TD
 The single most important consequence: **changing engine behaviour affects three
 consumers**, and only one of them (`visual/`) is something you can see. Check
 `heuristics/`, `visual/` and `env/` when you touch `game/`.
+
+The consumers stay unaware of each other; `visual/` does not import `env/`. Where
+the two meet — a human playing a trained policy — it is a script that wires them
+together (`scripts/playAgainstAgent.py`), because `env.NeuralComputer` is just a
+`HalmaPlayer` and the front-end cannot tell it from a heuristic bot.
 
 ---
 
@@ -235,6 +240,18 @@ moves.
 `HalmaEnv` wraps a `ComputedGame` as a Gymnasium environment. Actions are
 encoded as `start * fieldCount + end`.
 
+`env/neuralPlayer.py`'s `NeuralComputer` is the other consumer of that
+encoding: a `HalmaPlayer` backed by a `MaskablePPO` checkpoint, so a trained
+policy can be seated like any bot (`scripts/playAgainstAgent.py` does this
+against `visual/`). It keeps a `HalmaEnv` purely as an encoder and repoints it
+at whatever game is actually being played (`attachTo`) rather than
+reconstructing the observation by hand — one implementation of the encoding,
+used both to train and to play. That is also why `HalmaEnv.game` is typed as
+the `HalmaGame` base class rather than `ComputedGame`: only the base API is
+used, which is what lets the same encoder sit on an `InteractiveGame` too. The
+policy must sit on `HalmaEnv.AGENT_SEAT` — the observation is built for that
+seat — and the constructor refuses any other.
+
 Gymnasium models one agent against a world; Halma has two players. So the agent
 owns one seat and the heuristic opponent moves *inside* `step` — one env step is
 a full round. Only ~65 of 14641 encoded actions are legal at a time, so
@@ -395,7 +412,7 @@ once at setup so the heuristics can look up any pair in O(1).
 | `game/` | Refactored, documented, characterization-tested |
 | `heuristics/` | Working; five bots, strength measured against each other |
 | `visual/` | Working; refactored into focused modules. No tests |
-| `env/` | Satisfies the Gymnasium API, masked and shaped |
+| `env/` | Satisfies the Gymnasium API, masked and shaped; trained policies playable via `NeuralComputer` |
 | Agent | Cloned from a bot, then fine-tuned by PPO to 99% against `advancedDistScore` |
 
 `env/` passes `gymnasium.utils.env_checker.check_env` and has action masking, a
