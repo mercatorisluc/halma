@@ -31,6 +31,16 @@ class HalmaEnv(gym.Env):
 
     Two players only: the normalizer has no permutation for a third seat, and
     three-player Halma is not zero-sum. See ARCHITECTURE.md.
+
+    ``selfSeat`` defaults to ``AGENT_SEAT`` -- training always wants the agent
+    on that seat, and every existing caller relies on it. It exists as a
+    parameter because the permutation the observation is built with
+    (``_permutationKey``) already keyed itself off a player's own identifier
+    rather than the ``AGENT_SEAT`` constant, for every use except building the
+    observation itself -- so a policy seated on ``OPPONENT_SEAT`` needed only
+    that one piece filled in, not a second encoding. That is what lets two
+    ``NeuralComputer``s face each other: each keeps its own encoder, seated on
+    its own actual seat.
     """
 
     AGENT_SEAT = 1
@@ -42,8 +52,15 @@ class HalmaEnv(gym.Env):
         opponentStrategy: str | Sequence[str] = "sparsityScore",
         shapingWeight: float = 1.0,
         gamma: float = 0.99,
+        selfSeat: int = AGENT_SEAT,
     ) -> None:
         super().__init__()
+        # Which seat's viewpoint the observation is built from. Everything
+        # else in this class already keyed off a player's own identifier
+        # rather than this constant; only the observation and the few things
+        # that mean "my own seat" needed to learn to read it.
+        self.selfSeat = selfSeat
+        self.otherSeat = self.OPPONENT_SEAT if selfSeat == self.AGENT_SEAT else self.AGENT_SEAT
         # The agent's own seat is a Computer only so the game object is
         # well-formed; its strategy is never consulted, because moves arrive
         # through step().
@@ -78,11 +95,11 @@ class HalmaEnv(gym.Env):
         # Field id -> steps from there to the nearest target field. The target
         # zone is fixed per seat, so this is a constant vector rather than
         # something to recompute while scoring.
-        self.distanceToTarget = self._targetDistances(self._player(self.AGENT_SEAT))
+        self.distanceToTarget = self._targetDistances(self._player(self.selfSeat))
         # Fixed scale for the potential. The opening is identical every game,
         # so this is a constant, not per-episode state -- the shaping would
         # stop telescoping if it moved during a game.
-        self.openingProgress = self._progress(self._player(self.AGENT_SEAT))
+        self.openingProgress = self._progress(self._player(self.selfSeat))
 
         self.actionCount = self.fieldCount**2
         self.action_space = spaces.Discrete(self.actionCount)
@@ -108,9 +125,17 @@ class HalmaEnv(gym.Env):
     # ------------------------------------------------------------------ setup
 
     def _seatPlayers(self) -> None:
-        agent = Computer(self.AGENT_SEAT, self.agentStrategy)
-        opponent = Computer(self.OPPONENT_SEAT, self.opponentStrategy)
-        self.game.initGame([agent, opponent])
+        agent = Computer(self.selfSeat, self.agentStrategy)
+        opponent = Computer(self.otherSeat, self.opponentStrategy)
+        # HalmaGame.initPlayers hands out home corners by list position, not
+        # by a player's own identifier -- players[0] always gets
+        # player1Positions -- so the two have to go in seat order regardless
+        # of which one is "self", or selfSeat=OPPONENT_SEAT would seat the
+        # agent on the wrong player's corner.
+        ordered: list[HalmaPlayer] = (
+            [agent, opponent] if self.selfSeat < self.otherSeat else [opponent, agent]
+        )
+        self.game.initGame(ordered)
 
     @property
     def board(self) -> HalmaBoard:
@@ -169,7 +194,7 @@ class HalmaEnv(gym.Env):
         terminated = winner is not None or outOfMoves
 
         if winner is not None:
-            outcome = 1.0 if winner == self.AGENT_SEAT else -1.0
+            outcome = 1.0 if winner == self.selfSeat else -1.0
         elif outOfMoves:
             # Priced as a loss. Scoring 0 against -1 for losing made stalling
             # strictly the better play, and an agent duly found it: it ended
@@ -267,7 +292,7 @@ class HalmaEnv(gym.Env):
         result. Unnormalised the opening is 140 steps of travel, which would
         drown the result out entirely.
         """
-        remaining = self._progress(self._player(self.AGENT_SEAT))
+        remaining = self._progress(self._player(self.selfSeat))
         return 1.0 - remaining / self.openingProgress
 
     def _shaping(self, terminated: bool) -> float:
@@ -350,7 +375,7 @@ class HalmaEnv(gym.Env):
         """
         if self._isAgentsTurn():
             return len(self._legalActions())
-        return len(self.board.allValidMoves(self._player(self.AGENT_SEAT)))
+        return len(self.board.allValidMoves(self._player(self.selfSeat)))
 
     def encodeAction(self, move: MoveEndpoints) -> int:
         return int(move[0]) * self.fieldCount + int(move[-1])
@@ -361,7 +386,7 @@ class HalmaEnv(gym.Env):
     # ------------------------------------------------------------ game steps
 
     def _isAgentsTurn(self) -> bool:
-        return self.game.currentPlayer().identifier == self.AGENT_SEAT
+        return self.game.currentPlayer().identifier == self.selfSeat
 
     def _playAgentMove(self, action: int) -> None:
         player = self.game.currentPlayer()
@@ -417,14 +442,14 @@ class HalmaEnv(gym.Env):
         normalisation the start is always fields 0-14 and the target 102-120,
         so they are constant and carry nothing.
         """
-        agent = self._player(self.AGENT_SEAT)
-        opponent = self._player(self.OPPONENT_SEAT)
+        agent = self._player(self.selfSeat)
+        opponent = self._player(self.otherSeat)
         state = self.normalizer.permute(self.board.boardState(), self._permutationKey(agent))
 
         board = np.zeros((3, 17, 17), dtype=np.float32)
         rows, cols = self.rasterIndex[:, 0], self.rasterIndex[:, 1]
-        board[0, rows, cols] = (state == self.AGENT_SEAT).astype(np.float32)
-        board[1, rows, cols] = (state == self.OPPONENT_SEAT).astype(np.float32)
+        board[0, rows, cols] = (state == self.selfSeat).astype(np.float32)
+        board[1, rows, cols] = (state == self.otherSeat).astype(np.float32)
         board[2] = self.boardMask
 
         scalars = np.array(

@@ -11,10 +11,13 @@ different board plays worse for reasons no one can see. Instead a ``HalmaEnv``
 is kept purely as an encoder and pointed at the live game, so there is one
 implementation of the observation and one of the action encoding.
 
-That is also why the network must sit on ``HalmaEnv.AGENT_SEAT``: the encoder
-builds the observation for that seat, and seating the policy elsewhere would
-hand it the opponent's view of the board. The constructor refuses rather than
-letting that happen quietly.
+Each ``NeuralComputer`` carries its own encoder, told at construction which
+seat is its own (``HalmaEnv(selfSeat=identifier)``), so the observation is
+always built from *this* player's viewpoint even when another ``NeuralComputer``
+occupies the other seat -- that is what lets two checkpoints play each other.
+Only seats 1 and 2 are valid: the normalizer has no permutation for a third,
+and the constructor refuses rather than letting that fail quietly deep inside
+an observation.
 """
 
 from __future__ import annotations
@@ -32,17 +35,19 @@ class NeuralComputer(HalmaPlayer):
     """A player whose moves come from a trained MaskablePPO checkpoint."""
 
     def __init__(self, identifier: PlayerId, checkpoint: str, deterministic: bool = True) -> None:
-        if identifier != HalmaEnv.AGENT_SEAT:
+        if identifier not in (HalmaEnv.AGENT_SEAT, HalmaEnv.OPPONENT_SEAT):
             raise ValueError(
-                f"a policy plays seat {HalmaEnv.AGENT_SEAT}, not {identifier}: "
-                "the observation is built for that seat"
+                f"a policy plays seat {HalmaEnv.AGENT_SEAT} or {HalmaEnv.OPPONENT_SEAT}, "
+                f"not {identifier}: the normalizer has no permutation for a third seat"
             )
         super().__init__(identifier)
         self.model = MaskablePPO.load(checkpoint)
         # An encoder, not a game. Its own board is discarded by attachTo; the
         # geometry it derived in __init__ (raster layout, normaliser) is the
         # same for every standard board, which is what makes the swap safe.
-        self.encoder = HalmaEnv()
+        # selfSeat matches this player's own seat, so the observation is
+        # built from its own viewpoint whichever side it plays.
+        self.encoder = HalmaEnv(selfSeat=identifier)
         # Argmax by default -- the policy's actual best move. Sampling makes it
         # play its distribution instead, which is a weaker but more varied
         # opponent, and is how the evaluation numbers labelled "sampled" arise.

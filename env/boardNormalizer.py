@@ -30,8 +30,26 @@ class Normalizer:
         permutation.sort(key=lambda x: (x[1], x[0]))
         return np.array([x[2] for x in permutation])
 
+    def turnBoard240DegreesPermutation(self):
+        """Player 2's actual corner, not player 3's.
+
+        The three home corners sit 120 degrees apart, in the order player1 (0
+        degrees) -> player3 (120) -> player2 (240) -- verified against
+        Initializer's actual coordinates, not assumed. ``(x, y) -> (y, -x-y)``
+        is ``(x, y) -> (-x-y, x)`` composed with itself.
+        """
+        permutation = [(y, -x - y, _) for x, y, _ in self.boardStructure]
+        permutation.sort(key=lambda x: (x[1], x[0]))
+        return np.array([x[2] for x in permutation])
+
     def turnBoard60DegreesPermutation(self):
         permutation = [(-y, x + y, _) for x, y, _ in self.boardStructure]
+        permutation.sort(key=lambda x: (x[1], x[0]))
+        return np.array([x[2] for x in permutation])
+
+    def turnBoard300DegreesPermutation(self):
+        """``(x, y) -> (x+y, -x)``: 60 degrees composed with 240."""
+        permutation = [(x + y, -x, _) for x, y, _ in self.boardStructure]
         permutation.sort(key=lambda x: (x[1], x[0]))
         return np.array([x[2] for x in permutation])
 
@@ -46,13 +64,21 @@ class Normalizer:
         return np.argsort([x[2] for x in permutation])
 
     def turnBoardForPlayer2(self):
-        permutation = self.boardStructure[self.turnBoard120DegreesPermutation()]
+        permutation = self.boardStructure[self.turnBoard240DegreesPermutation()]
         return np.argsort([x[2] for x in permutation])
 
     def turnAndFlipBoardForPlayer2(self):
-        turn120Degrees = self.boardStructure[self.turnBoard120DegreesPermutation()]
-        flippedAlongYAxis = turn120Degrees[self.flipAlongYAxisPermutation()]
-        permutation = flippedAlongYAxis[self.turnBoard60DegreesPermutation()]
+        """Player 1's own flip is ``rot60`` composed with a Y-axis flip,
+        chosen because it maps player 1's corner onto itself -- the same
+        corner canonical ids 0-14 always mean, whichever pullback is used.
+        Player 2's pullback has to land player 1's *actual* corner (still
+        where ids 0-14 point) onto player 2's, the way ``turnBoardForPlayer2``
+        already does with a plain 240-degree turn. Composing that after
+        player 1's flip does it: ``rot240 . (rot60 . flip) = rot300 . flip``.
+        Verified directly against Initializer's coordinates, not assumed.
+        """
+        flippedAlongYAxis = self.boardStructure[self.flipAlongYAxisPermutation()]
+        permutation = flippedAlongYAxis[self.turnBoard300DegreesPermutation()]
         return np.argsort([x[2] for x in permutation])
 
     def permute(self, observation, permutationKey):

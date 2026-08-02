@@ -9,10 +9,18 @@ that it wins, not what it does, and the specialisation the evaluation found
 (99% against the bot it trained on, ~90% against random) is the kind of thing
 that shows itself in the moves.
 
-The human plays seat 2 because the policy has to play seat 1: its observation
-is built for ``HalmaEnv.AGENT_SEAT``. Seats differ only in which triangle they
-start from, and play order is randomised as in every other game here, so this
-costs the human nothing.
+The default is the strongest checkpoint saved, over 30 games against each of
+``advancedDistScore`` / ``bottleneck`` / ``sparsityScore`` / ``random``:
+``tunedEnt000`` and ``tunedEnt001`` both average 88%, ``cloned`` 71%. The two
+tuned ones are indistinguishable at that sample size, as the entropy sweep
+already found; ``tunedEnt000`` is kept because it is also the one ahead over
+the 200-game measurement (99.5% against ``advancedDistScore`` to 99.0%).
+
+The human plays seat 2, ``NeuralComputer`` on seat 1 -- an arbitrary choice now
+that the policy can be seated on either (see ``env/halmaEnv.py``'s
+``selfSeat``). Seats differ only in which triangle they start from, and play
+order is randomised as in every other game here, so this costs the human
+nothing.
 """
 
 from __future__ import annotations
