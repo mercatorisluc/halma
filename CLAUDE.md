@@ -63,9 +63,7 @@ rather than left to ruff's shifting defaults; the type checker is configured in
 
 **Ruff does not check types.** That is why the type checker is a separate gate:
 things like assigning an `int | str` into a `list[str]` pass lint cleanly and
-would otherwise only surface as a squiggle in the editor. `env/` is excluded
-from type checking on purpose — `HalmaEnv` does not satisfy the Gymnasium API
-yet, and fixing that is the first task of the RL work.
+would otherwise only surface as a squiggle in the editor.
 
 Layout is the formatter's decision — do not hand-tune blank lines, quotes or
 line breaks, and run `ruff format .` before committing. Naming is the one thing
@@ -77,14 +75,16 @@ new code.
 
 ## Type annotations
 
-`game/` and `heuristics/` annotate every method signature, using the aliases in
-`game/boardTypes.py` (`FieldId`, `Coord`, `PlayerId`, `MoveEndpoints`,
-`MovePath`, `AnyMove`). Keep new engine code annotated — the point is that the
-two move representations become checkable rather than merely documented.
+`game/`, `heuristics/`, and `env/` annotate every method signature, using the
+aliases in `game/boardTypes.py` (`FieldId`, `Coord`, `PlayerId`,
+`MoveEndpoints`, `MovePath`, `AnyMove`) wherever engine types are in play. Keep
+new code annotated — the point is that the two move representations become
+checkable rather than merely documented.
 
 Annotate signatures, not obvious locals. There is no type checker in CI; the
-value is what the editor reports while writing. `visual/` and `env/` are
-deliberately unannotated, since both are due to be rewritten.
+value is what the editor reports while writing. `visual/` is the one area
+still deliberately unannotated, since it is due to be replaced by the browser
+GUI.
 
 ## Architecture
 

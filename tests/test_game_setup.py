@@ -1,5 +1,32 @@
 """Characterization tests for game and player initialisation."""
 
+from game.gameManager import ComputedGame
+from game.player import Computer
+
+
+def test_reseating_a_player_object_does_not_leak_its_previous_positions():
+    """Every existing caller constructs a fresh player per game, so this bug
+    was invisible until something (scripts/compareCheckpoints.py, to avoid
+    reloading a checkpoint from disk for every game) reused player objects
+    across games -- prepareForGameStart used to *update* positions rather
+    than reset it, so a player kept whatever it hadn't yet moved home from a
+    previous game, and move generation (board.py reads player.positions
+    directly) would then read phantom pieces the fresh board never placed."""
+    agent = Computer(1, "advancedDistScore")
+    opponent = Computer(2, "advancedDistScore")
+
+    first = ComputedGame()
+    first.seed(0)
+    first.initGame([agent, opponent])
+    first.play()
+    assert agent.positions != agent.startPositions  # actually moved somewhere
+
+    second = ComputedGame()
+    second.seed(0)
+    second.initGame([agent, opponent])
+    assert agent.positions == agent.startPositions
+    assert opponent.positions == opponent.startPositions
+
 
 def test_standard_game_has_two_players(game):
     assert [p.identifier for p in game.players] == [1, 2]

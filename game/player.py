@@ -40,7 +40,14 @@ class HalmaPlayer:
     def prepareForGameStart(self, board: HalmaBoard) -> None:
         for id in self.startPositions:
             board.fields[id].playerID = self.identifier
-        self.positions.update(self.startPositions)
+        # Reset, not update: every existing caller constructs a fresh player
+        # per game, so positions was always empty here and this bug was
+        # invisible. A reused player object (e.g. a NeuralComputer kept alive
+        # across many games to avoid reloading its checkpoint) would
+        # otherwise union in wherever its pieces ended the previous game,
+        # leaving move generation reading phantom pieces the board itself
+        # never placed.
+        self.positions = set(self.startPositions)
         self.nonArrived = self.positions - self.endPositions
         self.openEndPositions = self.endPositions - self.positions
         self.distanceScore = board.calculatePlayerDistanceScore(self)
