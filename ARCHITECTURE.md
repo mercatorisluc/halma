@@ -248,9 +248,15 @@ at whatever game is actually being played (`attachTo`) rather than
 reconstructing the observation by hand — one implementation of the encoding,
 used both to train and to play. That is also why `HalmaEnv.game` is typed as
 the `HalmaGame` base class rather than `ComputedGame`: only the base API is
-used, which is what lets the same encoder sit on an `InteractiveGame` too. The
-policy must sit on `HalmaEnv.AGENT_SEAT` — the observation is built for that
-seat — and the constructor refuses any other.
+used, which is what lets the same encoder sit on an `InteractiveGame` too.
+
+`HalmaEnv` takes a `selfSeat` (default `AGENT_SEAT`), and a `NeuralComputer`
+passes its own identifier through, so its encoder builds the observation from
+whichever seat it actually occupies. Training only ever uses seat 1, but this
+is what lets two checkpoints play each other (`scripts/compareCheckpoints.py`)
+instead of each only being measurable against a common panel of bots. The
+constructor still refuses any seat but `AGENT_SEAT`/`OPPONENT_SEAT` — the
+normalizer has no permutation for a third.
 
 Gymnasium models one agent against a world; Halma has two players. So the agent
 owns one seat and the heuristic opponent moves *inside* `step` — one env step is
@@ -275,6 +281,17 @@ against, whether or not it is in the pool.
 viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
 any player/orientation into one canonical frame, so a single policy learns one
 orientation rather than several.
+
+The `player2...` permutations sat unused until `selfSeat` gave them a caller —
+nothing had ever built an observation from seat 2 before — and unused turned
+out to mean wrong. The three home corners sit 120 degrees apart in the order
+player1 → player3 → player2, not player1 → player2 → player3, so
+`player2WithoutFlip` was rotating the board onto **player 3's** corner. Fixed
+by rotating 240 degrees instead, and `player2WithFlip` re-derived the same way
+rather than patched: `rot300` composed with the Y-axis flip, verified against
+an independently-derived coordinate transform on all 121 fields, not just the
+subset that happened to look self-consistent. See invariant 7 below for the
+second bug this same work found, which is the one that actually cost games.
 
 **The reward is shaped, and it has to be.** Winning is the only true reward and
 it arrives once per ~69 decisions — and a random agent, measured over 700 games,
@@ -365,6 +382,39 @@ does *not* bump the count — `moveApplied` goes straight to the board — which
 sound only because scoring never calls `_legalActions`. Hand-placing pieces
 does not bump it either, so tests that do that must not then read the mask.
 `reset` clears the entry, since a new game restarts the count.
+
+**7. `HalmaEnv._needsFlip` keys on a seat's fixed home corner, not its current
+pieces.** It picks between two mirror-symmetric but equally valid canonical
+frames, and both are correct in isolation — the mistake this guards against is
+subtler than choosing the wrong one. Keying on *current* piece positions makes
+the choice a function of where those pieces have wandered to, and a seat whose
+pieces cross the sign threshold mid-game (seat 2's do; seat 1's never do in
+practice, confirmed over 200 seeds) gets the canonical frame swapped out from
+under it almost every ply once its pieces straddle that line — a discontinuity
+training never produces, because it only ever trains seat 1, whose frame
+never moves. The cost was not cosmetic: a checkpoint at 99% against a heuristic
+from seat 1 lost 20/20 from seat 2, and 0/20 in self-play against its own
+seat-1 copy, while every other property of the encoding — the permutation math,
+byte-identical observations at the opening, move legality, per-move progress —
+checked out. Keying on `startPositions` instead (fixed for the whole game)
+recovered both: self-play went to a roughly even 17/13, seat 2 against the
+heuristic to 29/30. Pinned in `tests/test_env.py` by moving a player's current
+pieces to the far side of the board without touching `startPositions` and
+asserting the flip choice does not follow them.
+
+**8. A reused player object must not carry positions between games.**
+`prepareForGameStart` resets `positions` from `startPositions` rather than
+unioning into it, precisely so a player object seated in a second game does
+not keep whatever pieces it had not yet gotten home in the first. Every
+caller in `game/` and `heuristics/` constructs a fresh player per game and
+never needed this; `scripts/compareCheckpoints.py` reuses the same
+`NeuralComputer` across many games specifically to avoid reloading a
+checkpoint from disk each time, and hit it immediately — `board.py` reads
+`player.positions` directly to generate moves, so a stale union proposed
+moves from fields the fresh board had never placed a piece on, and applying
+one corrupted the board outright. Pinned in `tests/test_game_setup.py` by
+reseating the same two player objects across two games and checking
+`positions` resets rather than leaks.
 
 ---
 
@@ -481,7 +531,70 @@ one.
 The agent is also **specialised to the opponent it trained against**: 99%
 against `advancedDistScore` but 90-92% against `random`, where the clone was at
 96%. Beating one bot decisively is not the same as playing Halma well, so the
-next measurement worth having is against opponents it never saw.
+measurement worth having was against opponents it never saw.
+
+Measured, 30 games against each of four bots (argmax), mean win rate last:
+
+| checkpoint | advancedDist | bottleneck | sparsity | random | mean |
+|---|---|---|---|---|---|
+| `cloned` | 80.0 | 46.7 | 60.0 | **96.7** | 70.8 |
+| `tunedEnt000` | **100.0** | 90.0 | 76.7 | 86.7 | **88.3** |
+| `tunedEnt001` | 96.7 | 90.0 | 76.7 | 90.0 | **88.3** |
+
+At ±11 to ±18 on each cell, only the gaps between the clone and the tuned pair
+mean anything. Those say the specialisation is **narrower than it looked**: the
+clone is ahead only against `random`, and fine-tuning nearly doubles the score
+against `bottleneck` — the strongest one-ply bot, which neither checkpoint ever
+trained on. So PPO on top of the clone did not merely sharpen it against
+`advancedDistScore`; what it lost is ground against the weakest opponent, where
+the shortest path to a win is least like anything a bot would play. The two
+tuned checkpoints are indistinguishable, which is the entropy finding again.
+
+The comparison goes through a common panel of bots because that is what answers
+the question. Each cell is an absolute number against a fixed opponent — and for
+three of the four, one no checkpoint ever trained on — so a column is a yardstick
+rather than a relative ordering, and all three checkpoints are measurable on it
+at once. A head-to-head result says only which of two policies is ahead, and says
+it against an opponent that moves as training does.
+
+75k further steps on `bottleneck` — a heuristic the agent had only ever seen
+baked into `cloned`'s imitation data, never as a PPO opponent — pushed
+`tunedOnBottleneck` past `tunedEnt000` on every one of those four bots except
+`lookahead2` (46% argmax), the one bot none of this lineage has ever trained
+against: 100% on `advancedDistScore` and `sparsityScore`, 96% on `bottleneck`
+itself, 90% on `random`.
+
+Head-to-head is also available now (`scripts/compareCheckpoints.py`, using
+`selfSeat`), and building it is what found invariant 7 above: the first
+round-robin looked like a bug report rather than a result — seat 1 won every
+matchup and seat 2 never won once, regardless of which checkpoint sat where.
+The `_needsFlip` fix resolved it; a rerun stopped being seat-biased (draws
+went from many, seat 2 repeatedly timing out at the move cap, to zero) and
+produced a real ranking. Six checkpoints, every pairing, 30 games at seed 0:
+
+| checkpoint | record |
+|---|---|
+| `pooledWithLookahead` | 4-1 |
+| `cloned` | 3-2 |
+| `tunedEnt000` | 3-2 |
+| `tunedEnt001` | 3-2 |
+| `tunedOnBottleneck` | 2-3 |
+| `maskedPPO` | 0-5 |
+
+Single-seed argmax, so treat this as directional rather than a tight
+estimate — most matchups were 100/0 or close, a few near-even at 56.7%.
+Two things stand out anyway. `pooledWithLookahead` tops the head-to-head table
+despite being weaker than `tunedEnt000`/`tunedEnt001` against `advancedDistScore`
+specifically (88% vs 99%) — training against a pool of bots looks like it
+generalises better against *other policies* than against the single heuristic
+it is most often measured on, which a bot-panel column cannot show by itself.
+And the ranking is non-transitive (`pooledWithLookahead` beats `tunedEnt000`,
+`tunedEnt000` beats `tunedOnBottleneck`, `tunedOnBottleneck` beats
+`pooledWithLookahead`) — expected for adversarial policies trained by different
+processes, not a sign anything is still broken. `maskedPPO` and `maskedPPO_300k`
+predate later architecture changes; the latter now loads but its observation
+space no longer matches (`Box(246,)` against the current `Dict`) and is excluded,
+the former loads and plays but is the oldest checkpoint here and finished last.
 
 From here: self-play, which is the only route that does not inherit a teacher's
 ceiling, and search. One thing agreed for later is making position evaluation
