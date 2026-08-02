@@ -277,6 +277,31 @@ than playing against it. Training against a pool is the fix under test:
 still names the one bot progress reports and final results are measured
 against, whether or not it is in the pool.
 
+`opponentModel` seats a frozen checkpoint as the opponent instead of a
+heuristic — a `NeuralComputer` built once in `__init__` and reused every
+episode via `attachTo`, the same reuse `scripts/compareCheckpoints.py` relies
+on, rather than reloaded from disk each reset. It takes priority over
+`opponentStrategy`/`opponentPool` when given. `env/neuralPlayer.py` imports
+`HalmaEnv` itself, so `HalmaEnv` cannot import `NeuralComputer` at module
+level without a cycle; the import is deferred to inside `__init__`, the usual
+fix for a two-module cycle like this one. This is a fixed sparring partner,
+not self-play — the opponent's weights never move, only the trained side's
+do. `scripts/train.py --opponentModel PATH` wires it up, threading through
+progress reports and the before/after evaluation the same way a heuristic
+opponent would. True self-play — the opponent kept in step with training
+rather than frozen — is still unbuilt.
+
+`opponentModelPool` extends `opponentPool`'s per-episode draw to frozen
+checkpoints as well as heuristics: `reset()` draws from the combined pool
+(skipped, like `opponentPool`'s own draw, whenever `opponentModel` has pinned
+a single fixed opponent), so one run can mix heuristic and tuned-model
+opponents rather than being limited to one or the other. Every checkpoint in
+the pool is loaded once in `__init__`, same reasoning as `opponentModel`.
+`scripts/train.py --opponentModelPool PATH [PATH ...]` wires it up; the
+periodic progress-report callback prints one win-rate column per candidate in
+that case — `--opponent` plus one column per tuned checkpoint — rather than
+just the single number a fixed-opponent run tracks.
+
 `boardNormalizer.Normalizer` precomputes field-id permutations for each player's
 viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
 any player/orientation into one canonical frame, so a single policy learns one
@@ -570,35 +595,88 @@ round-robin looked like a bug report rather than a result — seat 1 won every
 matchup and seat 2 never won once, regardless of which checkpoint sat where.
 The `_needsFlip` fix resolved it; a rerun stopped being seat-biased (draws
 went from many, seat 2 repeatedly timing out at the move cap, to zero) and
-produced a real ranking. Six checkpoints, every pairing, 30 games at seed 0:
+produced a real ranking. Grown since to eleven checkpoints, every pairing, 30
+games at seed 0:
 
 | checkpoint | record |
 |---|---|
-| `pooledWithLookahead` | 4-1 |
-| `cloned` | 3-2 |
-| `tunedEnt000` | 3-2 |
-| `tunedEnt001` | 3-2 |
-| `tunedOnBottleneck` | 2-3 |
-| `maskedPPO` | 0-5 |
+| `multiVsModel` | 8-2 |
+| `tunedEnt000` | 7-3 |
+| `pooledFinetuned` | 7-3 |
+| `pooledWithLookahead` | 7-3 |
+| `tunedEnt001` | 6-4 |
+| `multiTeacherTuned` | 5-5 |
+| `cloned` | 5-5 |
+| `tunedOnBottleneck` | 4-6 |
+| `multiTuned` | 4-6 |
+| `clone_from_multi` | 2-8 |
+| `maskedPPO` | 0-10 |
 
 Single-seed argmax, so treat this as directional rather than a tight
-estimate — most matchups were 100/0 or close, a few near-even at 56.7%.
-Two things stand out anyway. `pooledWithLookahead` tops the head-to-head table
-despite being weaker than `tunedEnt000`/`tunedEnt001` against `advancedDistScore`
-specifically (88% vs 99%) — training against a pool of bots looks like it
-generalises better against *other policies* than against the single heuristic
-it is most often measured on, which a bot-panel column cannot show by itself.
-And the ranking is non-transitive (`pooledWithLookahead` beats `tunedEnt000`,
+estimate — most matchups were 100/0 or close, a few near-even at 56.7%. The
+ranking is non-transitive (`pooledWithLookahead` beats `tunedEnt000`,
 `tunedEnt000` beats `tunedOnBottleneck`, `tunedOnBottleneck` beats
 `pooledWithLookahead`) — expected for adversarial policies trained by different
 processes, not a sign anything is still broken. `maskedPPO` and `maskedPPO_300k`
 predate later architecture changes; the latter now loads but its observation
 space no longer matches (`Box(246,)` against the current `Dict`) and is excluded,
 the former loads and plays but is the oldest checkpoint here and finished last.
+`pooledFinetuned` is simply `pooledWithLookahead` given 100k further PPO steps
+against its original pool minus `lookahead2` (dropped for training-loop speed,
+~6x slower per step than the other four heuristics) — nothing structurally
+new, and it took the top spot outright.
 
-From here: self-play, which is the only route that does not inherit a teacher's
-ceiling, and search. One thing agreed for later is making position evaluation
-parallelisable, which today's `moveApplied` prevents.
+**A multi-teacher clone did not repeat the pooled-opponent generalisation
+story.** `scripts/pretrain.py --expert` now takes a list of bots instead of
+one; `collect()` draws one teacher per game from a seeded `rng`, so the
+recorded moves — and the fitted policy — are a blend rather than one bot's
+blind spots. `clone_from_multi` (`advancedDistScore` + `sparsityScore` +
+`bottleneck` as teachers) reached 68.7% agreement with its blended targets
+after 12 epochs, against ~73% for the single-teacher `cloned` — a harder
+target, as expected. Fine-tuning it with PPO's default learning rate
+reproduced the sharp-policy instability noted above for `cloned`, except this
+time it didn't recover: `approx_kl` ran 0.09-0.23 for the full 100k steps and
+argmax win rate against bots in the training pool *fell* (`sparsityScore`
+54%→22%), with sampled win rates on trained-on bots collapsing to 1%.
+Restarting from `clone_from_multi` with `--lr 1e-4 --targetKl 0.03` (200k
+steps, four-heuristic pool) fixed it — `approx_kl` held near 0.02-0.03 — and
+produced `multiTeacherTuned`, which clears its training panel decisively
+(99-100% argmax on three of four bots). But head-to-head against the
+existing roster it lands mid-table at 5-4, clearly behind every checkpoint
+descended from a single-bot or single-pool clone. The rest of the
+multi-teacher lineage does worse still (`clone_from_multi` 1-8, the collapsed
+`multiTuned` 4-5). So crushing a fixed heuristic panel and holding up against
+other trained policies turned out to be different things here — diversifying
+the imitation-learning *teacher* did not buy what diversifying the PPO
+*opponent* pool did.
+
+**`HalmaEnv` can now seat a frozen checkpoint as the training opponent**
+(`opponentModel`, `scripts/train.py --opponentModel PATH` — see the `env/`
+section above), not just a heuristic. That is a fixed sparring partner, not
+self-play: the opponent's weights never move during the run. True self-play —
+the opponent kept in step with training rather than frozen, the route that
+does not inherit a teacher's ceiling — is still unbuilt, and search is a
+separate, further-out direction.
+
+**And a fixed model opponent beat both heuristic approaches.** `multiVsModel`
+is `clone_from_multi` fine-tuned for 200k steps (`--lr 1e-4 --targetKl 0.03`
+from the start this time) against a frozen `pooledFinetuned` -- then the best
+checkpoint in the roster -- instead of any heuristic. It went 25%→80% sampled
+against that opponent over the run, ended **100-0 argmax against
+`pooledFinetuned` itself** in the post-run report, and topped the eleven-way
+round robin outright at 8-2, ahead of every heuristic-only lineage including
+the one it started from (`clone_from_multi` alone was 2-8). It still
+generalises to bots it never trained on -- 91% argmax vs `advancedDistScore`,
+93% vs `random`, though only 25% vs `lookahead2`, which nothing in this
+project has ever trained against. Its one clear head-to-head loss is to
+`tunedEnt000`. One run is not enough to call this the better method in
+general rather than a strong-opponent-plus-lower-lr combination that happened
+to work once, but it is the first thing in this whole investigation to beat
+`pooledFinetuned` decisively, and the mechanism (fight something that is
+already good, rather than a fixed heuristic panel or a blend of teachers) is
+the closest analogue to self-play buildable without also updating the
+opponent's weights. One thing agreed for later is making
+position evaluation parallelisable, which today's `moveApplied` prevents.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.

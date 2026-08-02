@@ -46,11 +46,25 @@ class ProgressReport(BaseCallback):
     Stable-Baselines' own log shows ``ep_rew_mean``, which includes shaping and
     therefore rises when the agent merely advances. That is worth seeing, but it
     is not the thing being optimised for, so this measures actual games as well.
+
+    ``candidates`` is a list of ``(label, opponentModel)`` pairs: a heuristic
+    entry has ``opponentModel=None`` and ``label`` names the strategy passed
+    as ``opponent``; a tuned-checkpoint entry has ``opponentModel`` set to its
+    path and ``label`` only names the printed column, since ``opponentModel``
+    overrides whatever ``opponent`` string ``evaluate()`` is given. One line
+    is printed per report with one win rate per candidate, so a pooled run
+    against several opponent kinds shows progress against each rather than
+    just the one ``--opponent`` tracks.
     """
 
-    def __init__(self, opponent: str, every: int = 25_000, games: int = 20) -> None:
+    def __init__(
+        self,
+        candidates: list[tuple[str, str | None]],
+        every: int = 25_000,
+        games: int = 20,
+    ) -> None:
         super().__init__()
-        self.opponent = opponent
+        self.candidates = candidates
         self.every = every
         self.games = games
         self.nextAt = every
@@ -61,17 +75,22 @@ class ProgressReport(BaseCallback):
             # self.model is typed as the base algorithm; here it is always the
             # MaskablePPO being trained, whose predict() takes action_masks.
             model = cast("MaskablePPO", self.model)
-            # Sampled, not argmax: the argmax of a half-trained policy is a
-            # degenerate fixed rule and says nothing about progress. Measured
-            # on the same model: argmax 0.5% pieces home, sampled 3.7%.
-            result = evaluate(model, self.opponent, self.games, seed=90_000, deterministic=False)
-            print(
-                f"  [{self.num_timesteps:>7,} steps]"
-                f"  wins {result['winRate'] * 100:5.1f} %"
-                f"  pieces home {result['homeFraction'] * 100:5.1f} %"
-                f"  {result['avgSteps']:.0f} steps/game",
-                flush=True,
-            )
+            columns = []
+            for label, opponentModel in self.candidates:
+                # Sampled, not argmax: the argmax of a half-trained policy is a
+                # degenerate fixed rule and says nothing about progress.
+                # Measured on the same model: argmax 0.5% pieces home, sampled
+                # 3.7%.
+                result = evaluate(
+                    model,
+                    label,
+                    self.games,
+                    seed=90_000,
+                    deterministic=False,
+                    opponentModel=opponentModel,
+                )
+                columns.append(f"{label} {result['winRate'] * 100:5.1f}%")
+            print(f"  [{self.num_timesteps:>7,} steps]  " + "   ".join(columns), flush=True)
         return True
 
 
@@ -81,17 +100,24 @@ def evaluate(
     games: int,
     seed: int = 10_000,
     deterministic: bool = True,
+    opponentModel: str | None = None,
 ) -> dict:
     """Play out games and count wins by outcome, not by reward.
 
     ``model=None`` plays uniformly at random, which is the floor to clear: a
     random agent wins none of 700 games against any of the bots.
+
+    ``opponentModel``, if given, is a frozen checkpoint seated as the
+    opponent instead of the heuristic named by ``opponent`` -- see
+    ``HalmaEnv``. Built once, outside the game loop below, and reused for
+    every game: a fresh ``HalmaEnv`` per game would reload that checkpoint
+    from disk every game, which is fine for a heuristic but not for a model.
     """
     wins = losses = draws = 0
     steps = 0
     homeFractions = []
+    env = HalmaEnv(opponentStrategy=opponent, opponentModel=opponentModel)
     for i in range(games):
-        env = HalmaEnv(opponentStrategy=opponent)
         obs, _ = env.reset(seed=seed + i)
         rng = np.random.default_rng(seed + i)
         while True:
@@ -199,6 +225,21 @@ def main() -> None:
     # PPO from noise has nothing to learn from here; from a clone of a bot it
     # starts inside a policy that already plays.
     parser.add_argument("--init", default=None, help="checkpoint to fine-tune")
+    # A frozen checkpoint seated as the opponent instead of any heuristic --
+    # takes priority over --opponent/--opponentPool for seating, though
+    # --opponent still labels the progress reports and evalOpponents default.
+    # Its weights never change during this run: a fixed sparring partner, not
+    # self-play, which would also need to update the opponent's own weights.
+    parser.add_argument("--opponentModel", default=None, help="frozen checkpoint to train against")
+    # Extends --opponentPool's per-episode draw to tuned checkpoints as well
+    # as heuristics -- see HalmaEnv's opponentModelPool. Ignored if
+    # --opponentModel pins a single fixed opponent, same as --opponentPool.
+    parser.add_argument(
+        "--opponentModelPool",
+        nargs="+",
+        default=None,
+        help="tuned checkpoints to train against, drawn alongside --opponentPool",
+    )
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
     )
@@ -215,7 +256,11 @@ def main() -> None:
     def makeEnv(rank: int):
         def build() -> HalmaEnv:
             return HalmaEnv(
-                opponentStrategy=trainingOpponents, shapingWeight=args.shaping, gamma=args.gamma
+                opponentStrategy=trainingOpponents,
+                opponentModel=args.opponentModel,
+                opponentModelPool=args.opponentModelPool,
+                shapingWeight=args.shaping,
+                gamma=args.gamma,
             )
 
         return build
@@ -224,7 +269,11 @@ def main() -> None:
         SubprocVecEnv([makeEnv(i) for i in range(args.envs)])
         if args.envs > 1
         else HalmaEnv(
-            opponentStrategy=trainingOpponents, shapingWeight=args.shaping, gamma=args.gamma
+            opponentStrategy=trainingOpponents,
+            opponentModel=args.opponentModel,
+            opponentModelPool=args.opponentModelPool,
+            shapingWeight=args.shaping,
+            gamma=args.gamma,
         )
     )
 
@@ -235,13 +284,25 @@ def main() -> None:
     opponents = args.evalOpponents or [args.opponent, "sparsityScore", "random"]
     opponents = list(dict.fromkeys(opponents))
 
-    if len(trainingOpponents) > 1:
+    if args.opponentModel:
+        print(f"opponent model {args.opponentModel}, {args.steps} steps, gamma {args.gamma}\n")
+    elif args.opponentModelPool:
+        print(
+            f"training pool {trainingOpponents} + models {args.opponentModelPool}, "
+            f"{args.steps} steps, gamma {args.gamma}\n"
+        )
+    elif len(trainingOpponents) > 1:
         print(f"training pool {trainingOpponents}, {args.steps} steps, gamma {args.gamma}\n")
     else:
         print(f"opponent {args.opponent}, {args.steps} steps, gamma {args.gamma}\n")
     print("before training (random agent):")
     for opponent in opponents:
         report(f"vs {opponent}", evaluate(None, opponent, args.games))
+    if args.opponentModel:
+        report(
+            f"vs model {args.opponentModel}",
+            evaluate(None, args.opponent, args.games, opponentModel=args.opponentModel),
+        )
 
     print("\ntraining (ep_rew_mean includes shaping; the wins line does not):", flush=True)
     settings = {
@@ -260,7 +321,10 @@ def main() -> None:
         # distribution -- so the first rollouts have bad advantages until the
         # critic catches up.
         model = MaskablePPO.load(args.init, env=env, custom_objects=settings)
-        report("  the clone, before PPO", evaluate(model, args.opponent, args.games))
+        report(
+            "  the clone, before PPO",
+            evaluate(model, args.opponent, args.games, opponentModel=args.opponentModel),
+        )
     else:
         model = MaskablePPO(
             FactoredMaskablePolicy,
@@ -268,10 +332,28 @@ def main() -> None:
             policy_kwargs={"features_extractor_class": HalmaFeatures},
             **settings,
         )
+    # What the periodic progress reports track: the fixed opponent model
+    # alone if one is pinned, else --opponent plus one column per tuned
+    # checkpoint in the pool, so a mixed run shows progress against each
+    # kind of opponent rather than just the heuristic named by --opponent.
+    # cast, not a `str | None`-annotated variable, because a plain assignment
+    # of the `None` literal narrows to `None` regardless of the declared
+    # type, and list's invariance then refuses to widen the literal below to
+    # `list[tuple[str, str | None]]`.
+    noOpponentModel = cast("str | None", None)
+    reportCandidates: list[tuple[str, str | None]]
+    if args.opponentModel:
+        reportCandidates = [(args.opponent, args.opponentModel)]
+    elif args.opponentModelPool:
+        reportCandidates = [(args.opponent, noOpponentModel)] + [
+            (Path(checkpoint).stem, checkpoint) for checkpoint in args.opponentModelPool
+        ]
+    else:
+        reportCandidates = [(args.opponent, noOpponentModel)]
     model.learn(
         total_timesteps=args.steps,
         progress_bar=False,
-        callback=ProgressReport(args.opponent, every=args.reportEvery),
+        callback=ProgressReport(reportCandidates, every=args.reportEvery),
     )
 
     MODELS.mkdir(exist_ok=True)
@@ -284,6 +366,21 @@ def main() -> None:
         report(
             "   sampled",
             evaluate(model, opponent, args.games, deterministic=False),
+        )
+    if args.opponentModel:
+        report(
+            f"vs model {args.opponentModel}",
+            evaluate(model, args.opponent, args.games, opponentModel=args.opponentModel),
+        )
+        report(
+            "   sampled",
+            evaluate(
+                model,
+                args.opponent,
+                args.games,
+                deterministic=False,
+                opponentModel=args.opponentModel,
+            ),
         )
     print(f"\nsaved to {path}.zip")
 

@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -50,7 +51,7 @@ MODELS = Path(__file__).resolve().parent.parent / "models"
 
 
 def collect(
-    expert: str,
+    expert: str | Sequence[str],
     opponent: str,
     samples: int,
     seed: int,
@@ -65,14 +66,20 @@ def collect(
     the policy untested anywhere the expert never goes. Above 0 the states
     drift towards the ones the learner reaches, which is where its mistakes
     compound; the labels say what should have been done there.
+
+    ``expert`` takes either one bot name or a sequence of them. A sequence
+    draws one teacher per game, so the recorded moves -- and therefore the
+    fitted policy -- are a blend rather than a single bot's blind spots.
     """
-    strategy = makeStrategy(expert)
+    experts = (expert,) if isinstance(expert, str) else tuple(expert)
+    strategies = {name: makeStrategy(name) for name in set(experts)}
     boards, scalars, masks, actions = [], [], [], []
     rng = np.random.default_rng(seed)
     games = 0
     while len(actions) < samples:
         env = HalmaEnv(opponentStrategy=opponent)
         obs, _ = env.reset(seed=seed + games)
+        strategy = strategies[experts[rng.integers(len(experts))]]
         games += 1
         while True:
             player = env.game.currentPlayer()
@@ -164,7 +171,9 @@ def fit(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--expert", default="bottleneck", help="bot to copy")
+    parser.add_argument(
+        "--expert", nargs="+", default=["bottleneck"], help="bot(s) to copy, one drawn per game"
+    )
     parser.add_argument("--opponent", default="advancedDistScore")
     parser.add_argument("--samples", type=int, default=100_000, help="positions to record")
     parser.add_argument("--epochs", type=int, default=8)
@@ -182,9 +191,10 @@ def main() -> None:
     parser.add_argument("--name", default="cloned")
     args = parser.parse_args()
 
-    print(f"cloning {args.expert} against {args.opponent}\n")
-    print("the teacher, for reference:")
-    report(f"  {args.expert}", evaluateBot(args.expert, args.opponent, args.games))
+    print(f"cloning {' + '.join(args.expert)} against {args.opponent}\n")
+    print("the teacher(s), for reference:")
+    for expert in dict.fromkeys(args.expert):
+        report(f"  {expert}", evaluateBot(expert, args.opponent, args.games))
 
     model = MaskablePPO(
         FactoredMaskablePolicy,

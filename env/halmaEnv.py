@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
 import numpy as np
@@ -12,6 +12,11 @@ from game.board import HalmaBoard
 from game.boardTypes import MoveEndpoints
 from game.gameManager import ComputedGame, HalmaGame
 from game.player import Computer, HalmaPlayer
+
+if TYPE_CHECKING:
+    # Only for typing: env.neuralPlayer imports HalmaEnv itself, so the real
+    # import has to happen lazily inside __init__ -- see the comment there.
+    from env.neuralPlayer import NeuralComputer
 
 PIECES_PER_PLAYER = 15
 
@@ -41,6 +46,22 @@ class HalmaEnv(gym.Env):
     that one piece filled in, not a second encoding. That is what lets two
     ``NeuralComputer``s face each other: each keeps its own encoder, seated on
     its own actual seat.
+
+    ``opponentModel``, if given, seats a frozen ``NeuralComputer`` -- loaded
+    from that checkpoint -- as the opponent instead of a heuristic, and takes
+    priority over ``opponentStrategy`` and ``opponentModelPool`` both. It is
+    loaded once in ``__init__`` and reused for every episode via ``attachTo``,
+    not reconstructed per reset, which would reload the checkpoint from disk
+    every game. The checkpoint's weights never change: this is a fixed
+    sparring partner for PPO, not self-play, which would additionally need
+    the opponent's own weights kept in step with training.
+
+    ``opponentModelPool``, if given, extends the per-episode draw that
+    ``opponentPool`` already does for heuristics to a set of frozen
+    checkpoints as well -- reset() draws from the combined pool, so a run can
+    mix heuristic and tuned-model opponents rather than being limited to one
+    or the other. Every checkpoint is loaded once, here, for the same reason
+    ``opponentModel`` is.
     """
 
     AGENT_SEAT = 1
@@ -50,6 +71,8 @@ class HalmaEnv(gym.Env):
         self,
         agentStrategy: str = "advancedDistScore",
         opponentStrategy: str | Sequence[str] = "sparsityScore",
+        opponentModel: str | None = None,
+        opponentModelPool: Sequence[str] | None = None,
         shapingWeight: float = 1.0,
         gamma: float = 0.99,
         selfSeat: int = AGENT_SEAT,
@@ -76,6 +99,33 @@ class HalmaEnv(gym.Env):
             (opponentStrategy,) if isinstance(opponentStrategy, str) else tuple(opponentStrategy)
         )
         self.opponentStrategy = self.opponentPool[0]
+        # Loaded once, here, and reused by every _seatPlayers() call below --
+        # constructing a NeuralComputer loads a checkpoint from disk, which a
+        # per-episode rebuild would repeat every single game.
+        self._opponentNeural: NeuralComputer | None = None
+        # A fixed opponentModel is never redrawn in reset() below, unlike
+        # opponentPool and _opponentModelPool -- this flag is what tells
+        # reset() to leave self._opponentNeural alone rather than overwrite
+        # it with a pool draw.
+        self._opponentModelFixed = opponentModel is not None
+        if opponentModel is not None:
+            # env.neuralPlayer imports HalmaEnv (for AGENT_SEAT/OPPONENT_SEAT
+            # and to build its own encoder), so importing it at module level
+            # here would be circular; deferred to first use instead.
+            from env.neuralPlayer import NeuralComputer
+
+            self._opponentNeural = NeuralComputer(self.otherSeat, opponentModel)
+
+        # Frozen checkpoints reset() can draw into alongside opponentPool's
+        # heuristics -- see the class docstring. Loaded once here rather than
+        # per draw, same reasoning as opponentModel above.
+        self._opponentModelPool: list[NeuralComputer] = []
+        if opponentModelPool:
+            from env.neuralPlayer import NeuralComputer
+
+            self._opponentModelPool = [
+                NeuralComputer(self.otherSeat, path) for path in opponentModelPool
+            ]
         # gamma has to be the discount the agent is trained with, or the
         # shaping stops being policy-invariant. shapingWeight = 0 turns shaping
         # off, which is how to measure whether it is earning its keep.
@@ -126,7 +176,9 @@ class HalmaEnv(gym.Env):
 
     def _seatPlayers(self) -> None:
         agent = Computer(self.selfSeat, self.agentStrategy)
-        opponent = Computer(self.otherSeat, self.opponentStrategy)
+        opponent: HalmaPlayer = self._opponentNeural or Computer(
+            self.otherSeat, self.opponentStrategy
+        )
         # HalmaGame.initPlayers hands out home corners by list position, not
         # by a player's own identifier -- players[0] always gets
         # player1Positions -- so the two have to go in seat order regardless
@@ -136,6 +188,11 @@ class HalmaEnv(gym.Env):
             [agent, opponent] if self.selfSeat < self.otherSeat else [opponent, agent]
         )
         self.game.initGame(ordered)
+        if self._opponentNeural is not None:
+            # Points its encoder at *this* game object, and clears its own
+            # legal-action cache -- otherwise it would keep answering from
+            # whatever game it last played.
+            self._opponentNeural.attachTo(self.game)
 
     @property
     def board(self) -> HalmaBoard:
@@ -151,13 +208,20 @@ class HalmaEnv(gym.Env):
     ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         super().reset(seed=seed)
         # Redraw the opponent before seating, so a pool of more than one
-        # strategy actually rotates -- a fixed self.opponentStrategy would
+        # strategy -- heuristic, tuned checkpoint, or both -- actually
+        # rotates; a fixed self.opponentStrategy/self._opponentNeural would
         # otherwise stick to whichever entry __init__ happened to pick.
         # self.np_random is seeded by super().reset() above, so this draw is
-        # reproducible along with everything else the episode does.
-        if len(self.opponentPool) > 1:
-            draw = self.np_random.integers(len(self.opponentPool))
-            self.opponentStrategy = self.opponentPool[draw]
+        # reproducible along with everything else the episode does. Skipped
+        # entirely when opponentModel pinned a single fixed opponent -- that
+        # takes priority over both pools, see the class docstring.
+        if not self._opponentModelFixed and (len(self.opponentPool) > 1 or self._opponentModelPool):
+            draw = self.np_random.integers(len(self.opponentPool) + len(self._opponentModelPool))
+            if draw < len(self.opponentPool):
+                self.opponentStrategy = self.opponentPool[draw]
+                self._opponentNeural = None
+            else:
+                self._opponentNeural = self._opponentModelPool[draw - len(self.opponentPool)]
         # The engine has its own generator; seeding it is what makes a whole
         # episode reproducible, since seat order and the opponent's tie-breaks
         # both draw from it.
