@@ -165,6 +165,16 @@ def main() -> None:
     # eats what the parallelism wins. The flag stays because the picture would
     # change with a heavier network or a cheaper mask.
     parser.add_argument("--envs", type=int, default=1, help="parallel environments")
+    # sb3 defaults this to 3e-4, which suits a policy starting from noise: it is
+    # diffuse, so a large step costs nothing. A cloned policy is already sharp,
+    # and the same step throws it out of the region cloning found. Measured on
+    # this clone at 3e-4, approx_kl ran 0.06-0.37 against a healthy ~0.01 and a
+    # fifth to a third of samples hit the clipping limit from the first update.
+    parser.add_argument("--lr", type=float, default=3e-4, help="learning rate")
+    # The backstop for the same problem: sb3 abandons the rest of a rollout's
+    # passes once the update has moved the policy this far. None is sb3's
+    # default, meaning all --epochs passes run however far they drag it.
+    parser.add_argument("--targetKl", type=float, default=None, help="abort an update past this KL")
     parser.add_argument("--name", default="maskedPPO")
     # A checkpoint to start from, normally one of scripts/pretrain.py's clones.
     # PPO from noise has nothing to learn from here; from a clone of a bot it
@@ -207,6 +217,8 @@ def main() -> None:
         "gamma": args.gamma,
         "ent_coef": args.entropy,
         "n_epochs": args.epochs,
+        "learning_rate": args.lr,
+        "target_kl": args.targetKl,
         "seed": args.seed,
         "verbose": 1,
     }

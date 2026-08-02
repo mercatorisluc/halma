@@ -37,8 +37,8 @@ python -m scripts.baseline --games 150
 # Clone a heuristic bot into the policy (PPO from scratch does not get there)
 python -m scripts.pretrain --samples 150000 --epochs 12
 
-# Train a masked PPO agent and score it against that yardstick
-python -m scripts.train --steps 300000 --games 50 --init models/cloned
+# Fine-tune that clone with PPO and score it against the yardstick
+python -m scripts.train --steps 300000 --games 200 --init models/cloned
 ```
 
 All four must stay green; there is no build step. The pre-commit hook in

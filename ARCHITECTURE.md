@@ -396,7 +396,7 @@ once at setup so the heuristics can look up any pair in O(1).
 | `heuristics/` | Working; five bots, strength measured against each other |
 | `visual/` | Working; refactored into focused modules. No tests |
 | `env/` | Satisfies the Gymnasium API, masked and shaped |
-| Agent | A cloned policy plays at roughly bot strength. PPO on top not yet measured |
+| Agent | Cloned from a bot, then fine-tuned by PPO to 99% against `advancedDistScore` |
 
 `env/` passes `gymnasium.utils.env_checker.check_env` and has action masking, a
 canonical observation and reproducible seeding.
@@ -431,9 +431,31 @@ raises. Mixing during *collection* is a real method (DAgger) but its labels come
 from the expert and its loss is the supervised one; `pretrain.py --mix --rounds`
 implements that form.
 
-From here: fine-tune the clone with PPO and see whether it clears its teacher,
-then escalate to self-play and to search. One thing agreed for later is making
-position evaluation parallelisable, which today's `moveApplied` prevents.
+**PPO on top of the clone clears its teacher.** 300k steps from `models/cloned`
+take it from 82% to **99% against `advancedDistScore`** (198W 2L of 200 games,
+argmax; 97.5% sampled), with the fine-tuned agent also finishing games in 50
+steps against the clone's 60. The margins do not overlap, so this is the answer
+to the question the shaping and speed work was in service of: reinforcement
+learning does add something here, once it starts somewhere it can learn from.
+
+Two things that measurement also settled. The entropy coefficient, set to 0.01
+so a from-noise policy would not collapse, turned out not to matter on a cloned
+one: 0.001 and 0 land at 99.0% and 99.5%, indistinguishable. What does matter is
+step size. At sb3's default learning rate `approx_kl` ran 0.06-0.37 against a
+healthy ~0.01 and `clip_fraction` 0.2-0.37, and both runs were thrown back
+repeatedly along the way — one from 90% to 40% and back within 50k steps. A
+policy that starts sharp needs smaller steps than one that starts diffuse;
+`--lr` and `--targetKl` exist for that and the default is still the from-noise
+one.
+
+The agent is also **specialised to the opponent it trained against**: 99%
+against `advancedDistScore` but 90-92% against `random`, where the clone was at
+96%. Beating one bot decisively is not the same as playing Halma well, so the
+next measurement worth having is against opponents it never saw.
+
+From here: self-play, which is the only route that does not inherit a teacher's
+ceiling, and search. One thing agreed for later is making position evaluation
+parallelisable, which today's `moveApplied` prevents.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.
