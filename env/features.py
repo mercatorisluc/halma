@@ -9,6 +9,11 @@ neighbourhood comes for free.
 Small on purpose. The board is 17x17 with 121 useful cells, far below the sizes
 Stable-Baselines' stock ``NatureCNN`` is built for, and its stride-4 first layer
 would throw most of the board away immediately.
+
+Small also because training is bound by the network, not by the game: measured
+on one machine, the environment alone steps at 1648/s and the environment with
+PPO in the loop at 87/s, so the engine is 5% of a training step and everything
+else is here.
 """
 
 from __future__ import annotations
@@ -34,12 +39,20 @@ class HalmaFeatures(BaseFeaturesExtractor):
 
         # Stride 1 and padding 1 throughout: at 17x17 there is nothing to
         # downsample, and every field matters.
+        #
+        # The 1x1 at the end is a channel squeeze, and it is what the flatten
+        # costs. Ending on 32 channels hands Linear 32*17*17 = 9248 numbers,
+        # which was 2.37M of the extractor's 2.43M parameters -- the
+        # convolutions themselves are only 57k. Squeezing to 8 channels first
+        # cuts that to 0.59M without touching the spatial resolution, which has
+        # to stay: the policy needs to know *where* a piece is, so pooling the
+        # board away is not an option.
         self.conv = nn.Sequential(
             nn.Conv2d(channels, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
-            nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(64, 8, kernel_size=1),
             nn.ReLU(),
             nn.Flatten(),
         )

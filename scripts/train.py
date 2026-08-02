@@ -9,6 +9,15 @@ actions are illegal rather than which are good. ``MaskablePPO`` picks up
 
 Success is measured on ``info["outcome"]`` -- the unshaped win or loss -- never
 on the reward, which includes shaping and would flatter the agent.
+
+The defaults are set for throughput, because training is bound by the network:
+the environment alone steps at ~1650/s, the environment with PPO in the loop at
+~120/s. A squeezed feature extractor and four PPO epochs instead of ten run at
+319 steps/s against 120. Measured over a fixed quarter hour each, same seed and
+opponent, the cheap configuration got through 288,769 steps against 108,545 and
+came out ahead on every measure -- pieces home against ``advancedDistScore``
+8.5% against 1.7% by argmax, and better on all six pairings. So the extra steps
+more than pay for the smaller network and the fewer passes. Neither won a game.
 """
 
 from __future__ import annotations
@@ -144,6 +153,12 @@ def main() -> None:
     # can collapse onto an arbitrary subset of moves before the reward has
     # said anything, which would end below random -- as it did.
     parser.add_argument("--entropy", type=float, default=0.01)
+    # sb3 defaults this to 10. Four gradient passes over each rollout instead
+    # of ten is the single biggest lever on throughput, because the update is
+    # ~95% of the network time and the network is ~95% of a training step.
+    # Fewer passes learn less per sample, so this is only worth it if the extra
+    # steps more than pay it back -- measured, they do; see --steps below.
+    parser.add_argument("--epochs", type=int, default=4, help="PPO passes per rollout")
     # Defaults to 1 because parallel environments measured no real gain here:
     # 114 steps/s on one against 123 on eight, on a 10-core machine. MaskablePPO
     # fetches the action mask from every worker on every step, and that IPC
@@ -189,6 +204,7 @@ def main() -> None:
         env,
         gamma=args.gamma,
         ent_coef=args.entropy,
+        n_epochs=args.epochs,
         seed=args.seed,
         verbose=1,
         policy_kwargs={"features_extractor_class": HalmaFeatures},
