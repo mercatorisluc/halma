@@ -48,6 +48,17 @@ python -m scripts.train --steps 300000 --games 200 --init models/cloned
 # just specialise to --opponent
 python -m scripts.train --steps 300000 --init models/cloned \
     --opponentPool advancedDistScore sparsityScore bottleneck
+
+# Six rounds of checkpoint-only self-play, producing the next tuned model
+python -m scripts.progressivePhase1
+
+# Compare two checkpoints over all 800 two-ply openings -- the yardstick once
+# the heuristics saturate at 100%
+python -m scripts.openingSweep models/Talos1.0 models/Talos1.1
+
+# Watch one of those games, stepping the history with the arrow keys
+python -m scripts.replayGame --opening 6,26 66,67 --start 70 \
+    models/Talos1.0 models/Talos1.1
 ```
 
 All four must stay green; there is no build step. The pre-commit hook in

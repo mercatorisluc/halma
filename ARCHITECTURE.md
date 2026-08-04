@@ -740,7 +740,8 @@ round 3 (a pool member) 95% but `Talos1.0` only 65%, while those two are level
 with each other, so 65% is the honest figure for general strength.
 
 **Forcing the opening is a better way to compare two checkpoints than either
-sampling or plain argmax.** Each side has exactly 20 legal opening moves, and
+sampling or plain argmax** (`scripts/openingSweep.py`). Each side has exactly
+20 legal opening moves, and
 the count does not depend on what the other played, so fixing both gives 400
 games per play order and 800 in total — all still played out deterministically,
 so the variety costs no sampling noise. Over those 800, `Talos1.1` beats
@@ -753,7 +754,10 @@ anything statistical. It also sizes the first-mover advantage properly at about
 games plain argmax produces make it look decisive, which it is not.
 
 The 2% draws are all the same failure and are worth knowing about: two
-deterministic policies deadlock. In the one examined, 248 half-moves visited
+deterministic policies deadlock. `openingSweep.py` prints which openings drew
+and `scripts/replayGame.py --opening` replays one into the pygame window, which
+is how this was read off rather than inferred. In the one examined, 248
+half-moves visited
 only 79 distinct positions, one of them 44 times, entering a **4-half-move
 cycle at half-move 75** — one piece per side shuffling between two fields
 (17↔29 and 38↔78) while the score stayed frozen at 6-4 for the remaining ~170
