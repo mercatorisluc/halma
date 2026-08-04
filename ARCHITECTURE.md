@@ -302,6 +302,22 @@ periodic progress-report callback prints one win-rate column per candidate in
 that case — `--opponent` plus one column per tuned checkpoint — rather than
 just the single number a fixed-opponent run tracks.
 
+`opponentStrategy` may also be **empty**, which is the one case where no
+heuristic is ever drawn: the combined pool is then the checkpoints alone. It
+needs `opponentModel` or a non-empty `opponentModelPool` to supply an opponent
+at all, and `__init__` raises if neither is there, because `_seatPlayers()`
+runs before the first `reset()` and would otherwise have nothing to seat. This
+exists because the heuristic pool could not previously be emptied from the
+command line — `--opponent` always seeded it, so a nominally checkpoint-only
+run still faced a bot on roughly one episode in *n+1*.
+`scripts/train.py --noHeuristicOpponents` is the flag.
+
+Note what this is and is not: a pool of frozen past checkpoints is league play,
+not true self-play, and the distinction is the same one drawn for
+`opponentModel` above — every checkpoint's weights stay fixed for the whole
+run. Emptying the heuristic pool changes *who* is in the league, not whether
+the opponent tracks the learner.
+
 `boardNormalizer.Normalizer` precomputes field-id permutations for each player's
 viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
 any player/orientation into one canonical frame, so a single policy learns one
@@ -613,11 +629,24 @@ games at seed 0:
 | `maskedPPO` | 0-10 |
 
 Single-seed argmax, so treat this as directional rather than a tight
-estimate — most matchups were 100/0 or close, a few near-even at 56.7%. The
-ranking is non-transitive (`pooledWithLookahead` beats `tunedEnt000`,
-`tunedEnt000` beats `tunedOnBottleneck`, `tunedOnBottleneck` beats
-`pooledWithLookahead`) — expected for adversarial policies trained by different
-processes, not a sign anything is still broken. `maskedPPO` and `maskedPPO_300k`
+estimate — most matchups were 100/0 or close, a few near-even at 56.7%. Those
+near-even numbers have since been explained, and they were not close matches:
+under argmax the opening is fixed and both policies are deterministic, so the
+seed varies only the play order and a pairing has exactly **two** possible
+games, whichever `--games` says. 56.7% is 17/30, the share of those seeds that
+let seat 1 start — i.e. the first mover won every game and the two policies
+were indistinguishable. The non-transitivity below is the same artefact: about
+one bit per matchup, reported with an interval that assumed `--games`
+independent samples. `compareCheckpoints.py` now plays every pairing in both
+seat directions, and in argmax mode reports the winner per play order instead
+of a percentage; `--sampled` is what yields a real win rate (the same 20 seeds
+give 17 distinct games). The ranking above predates that and is kept as it was
+measured.
+
+The non-transitivity (`pooledWithLookahead` beats `tunedEnt000`, `tunedEnt000`
+beats `tunedOnBottleneck`, `tunedOnBottleneck` beats `pooledWithLookahead`) is
+therefore mostly measurement noise here, though genuine non-transitivity is
+also expected for adversarial policies trained by different processes. `maskedPPO` and `maskedPPO_300k`
 predate later architecture changes; the latter now loads but its observation
 space no longer matches (`Box(246,)` against the current `Dict`) and is excluded,
 the former loads and plays but is the oldest checkpoint here and finished last.
@@ -677,6 +706,37 @@ already good, rather than a fixed heuristic panel or a blend of teachers) is
 the closest analogue to self-play buildable without also updating the
 opponent's weights. One thing agreed for later is making
 position evaluation parallelisable, which today's `moveApplied` prevents.
+
+**A checkpoint-only league produced `Talos1.0_tuned`, and `--targetKl` turned
+out to be load-bearing rather than optional.** `scripts/progressivePhase1.py`
+runs six rounds of 50k/75k/100k/125k/150k/175k steps, each initialised from the
+previous round's checkpoint and trained against the accumulated pool of
+`Talos1.0` plus every earlier round — no heuristic anywhere in the draw
+(`--noHeuristicOpponents`). The first attempt omitted `--targetKl`, and round 2
+collapsed: argmax against `advancedDistScore` fell 97%→46%, `sparsityScore` to
+32%, and it lost 14% of games to `random`, with `approx_kl` running 0.044–0.064
+against the ~0.01 that is healthy here. Rerunning that same round with
+`--targetKl 0.02` and nothing else changed restored it to 100%. A 2x2 over
+{entropy 0.01, 0.03} x {no cap, cap} put the cause beyond doubt: both capped
+cells score ~100% across the panel, and entropy 0.03 — the value blamed first —
+is fine once updates are capped. The entropy runaway (`entropy_loss` -1.97 to
+-2.94) was a symptom of the oversized updates, not the driver. A control that
+added a `bottleneck` anchor to the training pool without the cap recovered only
+partially (73%/60%/100%), so pure checkpoint self-play was never the problem
+either. `multiVsModel` above had already used `--targetKl 0.03` from the start;
+the progressive script simply failed to inherit that.
+
+The heuristic panel cannot measure this lineage any more — every round scores
+99–100% argmax on all three bots, as does `Talos1.0` itself, so the numbers say
+only that nothing broke. Head-to-head is the only usable yardstick here.
+Sampled, both seat directions, 60 games per pairing: `Talos1.0_tuned` (round 6)
+beats `Talos1.0` **65% ± 12.1**, round 1 83%, round 3 95%. But rounds 1 and 3
+are statistically level with `Talos1.0` (53.3% and 58.3%, both intervals
+spanning 50%), so the first ~225k steps bought nothing measurable and the gain
+came from the longer late rounds — worth remembering when picking the next
+schedule. Part of round 6's margin is also league specialisation: it beats
+round 3 (a pool member) 95% but `Talos1.0` only 65%, while those two are level
+with each other, so 65% is the honest figure for general strength.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.

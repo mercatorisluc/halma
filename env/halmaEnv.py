@@ -98,7 +98,10 @@ class HalmaEnv(gym.Env):
         self.opponentPool = (
             (opponentStrategy,) if isinstance(opponentStrategy, str) else tuple(opponentStrategy)
         )
-        self.opponentStrategy = self.opponentPool[0]
+        # Empty is legal, but only for a pure self-play run, where every
+        # opponent comes from opponentModelPool and no heuristic should ever
+        # be drawn. The constructor checks that below, once both pools exist.
+        self.opponentStrategy = self.opponentPool[0] if self.opponentPool else ""
         # Loaded once, here, and reused by every _seatPlayers() call below --
         # constructing a NeuralComputer loads a checkpoint from disk, which a
         # per-episode rebuild would repeat every single game.
@@ -126,6 +129,16 @@ class HalmaEnv(gym.Env):
             self._opponentModelPool = [
                 NeuralComputer(self.otherSeat, path) for path in opponentModelPool
             ]
+        # With no heuristics to fall back on, _seatPlayers() has nothing to
+        # build an opponent from until reset() draws one, so seat a checkpoint
+        # now -- __init__ calls _seatPlayers() before any reset happens.
+        if not self.opponentPool and self._opponentNeural is None:
+            if not self._opponentModelPool:
+                raise ValueError(
+                    "an empty opponentStrategy needs opponentModel or opponentModelPool to "
+                    "supply the opponent"
+                )
+            self._opponentNeural = self._opponentModelPool[0]
         # gamma has to be the discount the agent is trained with, or the
         # shaping stops being policy-invariant. shapingWeight = 0 turns shaping
         # off, which is how to measure whether it is earning its keep.

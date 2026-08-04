@@ -226,9 +226,12 @@ def main() -> None:
             report("   sampled", evaluate(model, opponent, args.games, deterministic=False))
 
     MODELS.mkdir(exist_ok=True)
-    path = MODELS / args.name
+    # Explicit .zip: sb3 only appends it when Path.suffix is empty, and a name
+    # carrying a version number ("Talos1.0") already looks suffixed to pathlib.
+    path = MODELS / f"{args.name}.zip"
     model.save(path)
-    print(f"\nsaved to {path}.zip\n  fine-tune with: python -m scripts.train --init {path}")
+    initHint = path.with_suffix("")
+    print(f"\nsaved to {path}\n  fine-tune with: python -m scripts.train --init {initHint}")
 
 
 def evaluateBot(strategy: str, opponent: str, games: int) -> dict:

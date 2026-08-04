@@ -94,6 +94,32 @@ class ProgressReport(BaseCallback):
         return True
 
 
+class CheckpointSaver(BaseCallback):
+    """Save intermediate checkpoints every ``every`` steps for self-play pool."""
+
+    def __init__(self, every: int = 50_000, basename: str = "checkpoint") -> None:
+        super().__init__()
+        self.every = every
+        self.basename = basename
+        self.nextAt = every
+        self.checkpointNum = 0
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps >= self.nextAt:
+            self.nextAt += self.every
+            self.checkpointNum += 1
+            model = cast("MaskablePPO", self.model)
+            # The .zip is spelled out because sb3 only appends it when
+            # Path.suffix is empty, and a name like "Talos1.0_sp_001" already
+            # has a "suffix" of ".0_sp_001" as far as pathlib is concerned --
+            # so the checkpoint would silently land without an extension.
+            path = MODELS / f"{self.basename}_{self.checkpointNum:03d}.zip"
+            model.save(path)
+            msg = f"  saved checkpoint {self.checkpointNum} at {self.num_timesteps:,} steps"
+            print(msg, flush=True)
+        return True
+
+
 def evaluate(
     model: MaskablePPO | None,
     opponent: str,
@@ -197,6 +223,8 @@ def main() -> None:
     # sb3 defaults this to 0. With a per-step signal this small the policy
     # can collapse onto an arbitrary subset of moves before the reward has
     # said anything, which would end below random -- as it did.
+    # For self-play training with checkpoint pools, higher entropy (0.02-0.05)
+    # promotes exploration and prevents overfitting to one version of the opponent.
     parser.add_argument("--entropy", type=float, default=0.01)
     # sb3 defaults this to 10. Four gradient passes over each rollout instead
     # of ten is the single biggest lever on throughput, because the update is
@@ -240,8 +268,27 @@ def main() -> None:
         default=None,
         help="tuned checkpoints to train against, drawn alongside --opponentPool",
     )
+    # Pure self-play: drop heuristics from the training draw entirely, so every
+    # episode is played against a checkpoint from --opponentModelPool. Without
+    # this the draw always includes --opponent, which is a heuristic.
+    parser.add_argument(
+        "--noHeuristicOpponents",
+        action="store_true",
+        help="train only against --opponentModelPool, never a heuristic",
+    )
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
+    )
+    parser.add_argument(
+        "--saveCheckpointsEvery",
+        type=int,
+        default=None,
+        help="save intermediate checkpoints every N steps (for self-play pool training)",
+    )
+    parser.add_argument(
+        "--checkpointBasename",
+        default="checkpoint",
+        help="basename for saved checkpoints (e.g., 'Talos1.0' -> Talos1.0_001, Talos1.0_002, ...)",
     )
     args = parser.parse_args()
 
@@ -249,7 +296,9 @@ def main() -> None:
     # existing fixed-opponent behaviour. Progress reports and the final
     # results still track --opponent specifically, whether or not it is in
     # the pool, so a pool run stays comparable to a fixed-opponent one.
-    trainingOpponents = args.opponentPool or [args.opponent]
+    trainingOpponents = [] if args.noHeuristicOpponents else (args.opponentPool or [args.opponent])
+    if args.noHeuristicOpponents and not (args.opponentModelPool or args.opponentModel):
+        parser.error("--noHeuristicOpponents needs --opponentModelPool or --opponentModel")
 
     # The env's shaping discount has to be the one PPO trains with, or the
     # shaping stops being policy-invariant.
@@ -350,14 +399,23 @@ def main() -> None:
         ]
     else:
         reportCandidates = [(args.opponent, noOpponentModel)]
+
+    callbacks: list[BaseCallback] = [ProgressReport(reportCandidates, every=args.reportEvery)]
+    if args.saveCheckpointsEvery:
+        callbacks.append(
+            CheckpointSaver(every=args.saveCheckpointsEvery, basename=args.checkpointBasename)
+        )
+
     model.learn(
         total_timesteps=args.steps,
         progress_bar=False,
-        callback=ProgressReport(reportCandidates, every=args.reportEvery),
+        callback=callbacks,
     )
 
     MODELS.mkdir(exist_ok=True)
-    path = MODELS / args.name
+    # Explicit .zip -- see CheckpointSaver above for why sb3 cannot be trusted
+    # to add it for names carrying a version number.
+    path = MODELS / f"{args.name}.zip"
     model.save(path)
 
     print("\nafter training (argmax, then sampled):")
@@ -382,7 +440,7 @@ def main() -> None:
                 opponentModel=args.opponentModel,
             ),
         )
-    print(f"\nsaved to {path}.zip")
+    print(f"\nsaved to {path}")
 
 
 if __name__ == "__main__":
