@@ -15,7 +15,7 @@ python main.py
 
 # Play against a trained policy instead of a heuristic bot
 python -m scripts.playAgainstAgent
-python -m scripts.playAgainstAgent --model models/tunedEnt001 --sampled
+python -m scripts.playAgainstAgent --model models/Talos1.0 --sampled
 
 # Run the whole test suite
 pytest

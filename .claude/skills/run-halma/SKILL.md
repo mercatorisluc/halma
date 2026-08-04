@@ -71,7 +71,7 @@ wrote /tmp/halma-shots/human.png (13307 bytes)
 
 | command | what it does |
 |---|---|
-| `new [seed=N] [agent=PATH] [sampled]` | start a game. Bare: human on seat 1 vs `lookahead2`, as `main.py`. With `agent=models/tunedEnt001`: the policy takes **seat 1** and the human seat 2, as `scripts/playAgainstAgent` — the observation is built for seat 1 and `NeuralComputer` refuses any other. |
+| `new [seed=N] [agent=PATH] [sampled]` | start a game. Bare: human on seat 1 vs `lookahead2`, as `main.py`. With `agent=models/Talos1.1`: the policy takes **seat 1** and the human seat 2, as `scripts/playAgainstAgent` — the observation is built for seat 1 and `NeuralComputer` refuses any other. |
 | `tick [n=1]` | run n main-loop frames. A bot on move plays one move per frame; a human on move idles. |
 | `state` | seat on move, human?, move count, playback cursor, pieces home per seat, winner |
 | `moves [n=10]` | legal `(start, end)` endpoint moves for whoever is on move |
@@ -114,8 +114,8 @@ need the front-end. Each mode is a few seconds:
 # → obs keys=['board', 'scalars'] shapes={'board': (3, 17, 17), 'scalars': (4,)}
 # → 40 steps ok, return=0.100, last info keys=['action_mask', 'illegalAction', 'outcome']
 
-.venv/bin/python .claude/skills/run-halma/driver.py policy models/tunedEnt001
-# → models/tunedEnt001 vs advancedDistScore: winner=1 in 110 moves
+.venv/bin/python .claude/skills/run-halma/driver.py policy models/Talos1.1
+# → models/Talos1.1 vs advancedDistScore: winner=1 in 98 moves
 ```
 
 Fast smoke runs of the training scripts, when you have changed them:

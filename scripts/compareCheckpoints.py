@@ -1,6 +1,6 @@
 """Play trained checkpoints against each other, not just against bots.
 
-    python -m scripts.compareCheckpoints models/tunedEnt000 models/cloned
+    python -m scripts.compareCheckpoints models/Talos1.0 models/Talos1.1
     python -m scripts.compareCheckpoints --games 30 --sampled models/a models/b models/c
 
 Analogous to scripts/baseline.py, but for policy checkpoints instead of

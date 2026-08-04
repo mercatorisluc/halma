@@ -44,7 +44,7 @@ from game.player import HumanPlayer
 from visual.gameVisualization import GameVisualization
 
 COMMANDS = """\
-new [seed=N] [agent=models/tunedEnt001] [sampled]
+new [seed=N] [agent=models/Talos1.1] [sampled]
                     start a game. Without agent= the human (seat 1) faces
                     lookahead2, as main.py does. With agent= a policy takes
                     seat 1 and the human seat 2, as scripts/playAgainstAgent
@@ -368,7 +368,7 @@ def policyMode(argv: list[str]) -> int:
     from env.neuralPlayer import NeuralComputer
     from game.player import Computer
 
-    model = argv[0] if argv else "models/tunedEnt001"
+    model = argv[0] if argv else "models/Talos1.1"
     game = ComputedGame()
     game.seed(5)
     agent = NeuralComputer(1, model)

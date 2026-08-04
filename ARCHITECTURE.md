@@ -772,5 +772,48 @@ trained in. Fixing it properly means a repetition signal in the observation,
 which would change the observation space and invalidate every existing
 checkpoint — deliberately deferred to the next generation.
 
+### How Talos1.1 was actually built, and what is still on disk
+
+The results above were measured over some sixteen checkpoints, which are named
+throughout as if they were still there. They are not: `models/` was pruned to
+`Talos1.0` and `Talos1.1` on 2026-08-05, because everything else was either
+unloadable, superseded, or reachable only through a checkpoint that survives.
+The numbers stay valid — they are recorded here and in the commit messages,
+which is what `.gitignore` says the history is for — but re-running an old
+comparison means retraining its participants.
+
+Two of the discarded ones could not have been re-run in any case:
+`shapedByTravel` predates `de6aecd` and fails to load at all (`size mismatch`
+in the feature extractor), and `maskedPPO_300k` still carries the pre-geometry
+`Box(246,)` observation space, which no current script can feed.
+
+The lineage that produced the surviving pair, reconstructed from the
+checkpoints' own metadata and the commands that made them — worth recording
+because none of it is derivable from the two files that remain:
+
+| # | checkpoint | how |
+|---|---|---|
+| 1 | `clone_from_multi` | `pretrain --expert advancedDistScore sparsityScore bottleneck --samples 150000 --epochs 12` |
+| 2 | `multiVsModel` | 200k PPO from 1, opponent the frozen `pooledFinetuned`, `--lr 1e-4 --targetKl 0.03` |
+| 3 | `multiVsModel2` | 100k from 2, opponent the frozen `tunedEnt000`, same step size |
+| 4 | — | 150k from 3, against the five-heuristic pool |
+| 5 | — | 100k from 4, against `random` alone |
+| 6 | **`Talos1.0`** | 500k from 5, heuristic pool **and** model pool (`multiVsModel`, `multiVsModel2`, `pooledFinetuned`), `--lr 1e-4 --targetKl 0.03` |
+| 7 | **`Talos1.1`** | six league rounds from 6, `scripts/progressivePhase1.py` |
+
+Steps 4-6 all wrote to the same name and were renamed to `Talos1.0` at the end,
+so the intermediate stages no longer exist as files; step 7's six round
+checkpoints were discarded with `226b632`. The frozen opponents in steps 2, 3
+and 6 belong to the heuristic-cloning lineage (`cloned` →
+`pooledWithLookahead` → `pooledFinetuned`, and `cloned` → `tunedEnt000`), which
+is therefore an ancestor of the *training signal* rather than of the weights.
+
+Only step 7 is reproducible from what is on disk: `progressivePhase1.py` fixes
+seed 42 and rebuilds every round from `Talos1.0`. Steps 1-6 are not, and
+`Talos1.0` is consequently the oldest thing here that cannot be regenerated —
+which is the reason it is kept even though `Talos1.1` supersedes it.
+
+### Next
+
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.
