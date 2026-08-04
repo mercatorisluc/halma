@@ -707,7 +707,7 @@ the closest analogue to self-play buildable without also updating the
 opponent's weights. One thing agreed for later is making
 position evaluation parallelisable, which today's `moveApplied` prevents.
 
-**A checkpoint-only league produced `Talos1.0_tuned`, and `--targetKl` turned
+**A checkpoint-only league produced `Talos1.1`, and `--targetKl` turned
 out to be load-bearing rather than optional.** `scripts/progressivePhase1.py`
 runs six rounds of 50k/75k/100k/125k/150k/175k steps, each initialised from the
 previous round's checkpoint and trained against the accumulated pool of
@@ -729,7 +729,8 @@ the progressive script simply failed to inherit that.
 The heuristic panel cannot measure this lineage any more — every round scores
 99–100% argmax on all three bots, as does `Talos1.0` itself, so the numbers say
 only that nothing broke. Head-to-head is the only usable yardstick here.
-Sampled, both seat directions, 60 games per pairing: `Talos1.0_tuned` (round 6)
+Sampled, both seat directions, 60 games per pairing: `Talos1.1` (round 6,
+kept under that name; the intermediate rounds were discarded)
 beats `Talos1.0` **65% ± 12.1**, round 1 83%, round 3 95%. But rounds 1 and 3
 are statistically level with `Talos1.0` (53.3% and 58.3%, both intervals
 spanning 50%), so the first ~225k steps bought nothing measurable and the gain
@@ -737,6 +738,35 @@ came from the longer late rounds — worth remembering when picking the next
 schedule. Part of round 6's margin is also league specialisation: it beats
 round 3 (a pool member) 95% but `Talos1.0` only 65%, while those two are level
 with each other, so 65% is the honest figure for general strength.
+
+**Forcing the opening is a better way to compare two checkpoints than either
+sampling or plain argmax.** Each side has exactly 20 legal opening moves, and
+the count does not depend on what the other played, so fixing both gives 400
+games per play order and 800 in total — all still played out deterministically,
+so the variety costs no sampling noise. Over those 800, `Talos1.1` beats
+`Talos1.0` **70.5%** (27.5% lost, 2.0% drawn), which corroborates the 65% above
+from a completely different direction. It is a census rather than a sample:
+those are *all* the two-ply openings, so no confidence interval applies, and
+the open question is whether forced openings represent free play rather than
+anything statistical. It also sizes the first-mover advantage properly at about
+**5 points** (`Talos1.1` 73.2% when starting against 67.8% when not) — the two
+games plain argmax produces make it look decisive, which it is not.
+
+The 2% draws are all the same failure and are worth knowing about: two
+deterministic policies deadlock. In the one examined, 248 half-moves visited
+only 79 distinct positions, one of them 44 times, entering a **4-half-move
+cycle at half-move 75** — one piece per side shuffling between two fields
+(17↔29 and 38↔78) while the score stayed frozen at 6-4 for the remaining ~170
+moves. Reaching the move cap is already priced as a loss, so the incentive is
+right; the cycle survives because a cycle needs *both* sides deterministic, and
+that never happens in training — PPO samples the learner's actions while the
+frozen opponent is argmax, so the randomness breaks it. Measured: 0 draws in
+100 games in the training configuration, average length 113 of a 250 cap. The
+agent therefore gets no gradient signal about this at all, and more steps will
+not address it; it is an artefact of evaluating a policy in a mode it never
+trained in. Fixing it properly means a repetition signal in the observation,
+which would change the observation space and invalidate every existing
+checkpoint — deliberately deferred to the next generation.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.
