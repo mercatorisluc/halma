@@ -881,6 +881,64 @@ which is a breadth weakness in its own right rather than a measurement
 artefact. Both argue for reading this score as a coarse instrument — a
 ten-point move means something, a two-point move does not.
 
+**`opponentSampling` measured neutral over three seeds** (Phase A,
+2026-08-05). Two arms of three seeds, 300k each from `Talos1.0` against a
+frozen `Talos1.0`, identical but for the knob, every checkpoint scored against
+the same reference `Talos1.1`:
+
+| seed | control breadth | sampled breadth | control opening | sampled opening |
+|---|---|---|---|---|
+| 42 | 40.8% | 51.2% | 33.9% | 48.8% |
+| 43 | 48.1% | 48.5% | 43.4% | 39.6% |
+| 44 | 51.0% | 47.4% | 41.9% | 40.9% |
+| mean | 46.6% | 49.0% | 39.7% | 43.1% |
+
++2.4 points of breadth, which no rank test can separate — with three seeds a
+side, complete separation is the only significant outcome available (p = 1/20)
+and seed 43 breaks it. **The finding that outlasts the null result is the
+spread**: the control arm alone ranges over ten points on both instruments,
+which is as large as the gap seed 42 appeared to show. Single-run conclusions
+in this project are not reliable, and the three intermediate stands of the
+randomOpening run above said the same thing before anyone was listening.
+
+**`Talos1.2` came out of five progressive rounds of 300k from `Talos1.0`**
+(`scripts/progressivePhase2.py`, 2026-08-05), with `--opponentSampling 0.5`
+kept in despite the null result — a deliberate bet, recorded as one in that
+script's docstring, on the argument that Phase A tested the knob in the setting
+where it has least to offer (one sparring partner, one round). Measured against
+`Talos1.1` after every round:
+
+| round | steps | breadth | opening |
+|---|---|---|---|
+| — | 0 (`Talos1.0`) | 39.6% | 29.5% |
+| 1 | 300k | 47.1% | 39.5% |
+| 2 | 600k | 54.5% | 51.0% |
+| 3 | 900k | 63.7% | 68.2% |
+| 4 | 1.2M | 63.1% | 70.6% |
+| 5 | 1.5M | **64.9%** | **69.4%** |
+
+Final: `Talos1.2` beats `Talos1.1` **69.4%** over the 800-opening census and
+**64.9% ± 3.7** on random positions; against the anchor `Talos1.0` it is 82.9%
+and 69.2%. The generation step is the same size as `Talos1.1`'s over
+`Talos1.0` (70.5%), which is why it is 1.2 and not 2.0.
+
+**The heuristic panel finally says something again, and it is the sampled
+column.** Argmax has been at 100% since `Talos1.0`, but sampled play went from
+`Talos1.1`'s 85% / 69% / 75% (`advancedDistScore` / `sparsityScore` /
+`bottleneck`) to **98.3% / 90.0% / 93.3%**. That is the same measurement the
+failed randomOpening run drove *down* to 42%, and it is the sharpest evidence
+that what improved is the policy's distribution rather than only its best move.
+
+**A fixed reference saturates, and rounds 3-4 show exactly what that looks
+like.** Against `Talos1.1` those two rounds scored 63.7% then 63.1% breadth,
+68.2% then 70.6% opening — flat, and read on its own it would say the league
+had run out. Head to head, `round4` beats `round3` **57.4%**, and `round5`
+beats `round4` **72.9%**. So the flatness was the instrument: once a candidate
+takes ~70% of a census, the reference has little resolution left to give. From
+round 5 the measurement of record became the previous round — a reference that
+grows with the run — with `Talos1.1` kept only as the bridge to everything
+recorded above it.
+
 The 2% draws are all the same failure and are worth knowing about: two
 deterministic policies deadlock. `openingSweep.py` prints which openings drew
 and `scripts/replayGame.py --opening` replays one into the pygame window, which
@@ -900,11 +958,12 @@ trained in. Fixing it properly means a repetition signal in the observation,
 which would change the observation space and invalidate every existing
 checkpoint — deliberately deferred to the next generation.
 
-### How Talos1.1 was actually built, and what is still on disk
+### How the Talos checkpoints were actually built, and what is still on disk
 
 The results above were measured over some sixteen checkpoints, which are named
 throughout as if they were still there. They are not: `models/` was pruned to
-`Talos1.0` and `Talos1.1` on 2026-08-05, because everything else was either
+`Talos1.0` and `Talos1.1` on 2026-08-05 (`Talos1.2` joined them the same day),
+because everything else was either
 unloadable, superseded, or reachable only through a checkpoint that survives.
 The numbers stay valid — they are recorded here and in the commit messages,
 which is what `.gitignore` says the history is for — but re-running an old
@@ -928,6 +987,17 @@ because none of it is derivable from the two files that remain:
 | 5 | — | 100k from 4, against `random` alone |
 | 6 | **`Talos1.0`** | 500k from 5, heuristic pool **and** model pool (`multiVsModel`, `multiVsModel2`, `pooledFinetuned`), `--lr 1e-4 --targetKl 0.03` |
 | 7 | **`Talos1.1`** | six league rounds from 6, `scripts/progressivePhase1.py` |
+| 8 | **`Talos1.2`** | five 300k league rounds from **6**, `scripts/progressivePhase2.py` |
+
+Step 8 branches from step 6, not from step 7: **`Talos1.2` is not a descendant
+of `Talos1.1` and never trained against it.** That was deliberate — `Talos1.1`
+is the reference every number above is expressed against, and a candidate
+trained against its own yardstick scores higher without being stronger, which
+is precisely what round 3 of the phase-1 league did (95% against pool members,
+65% against `Talos1.0`). It also means the two can be compared without an
+asterisk, and that `Talos1.1` can eventually be deleted without orphaning the
+lineage — but only once a measurement against `Talos1.0` exists to bridge the
+record, which is why the final numbers above report both.
 
 Steps 4-6 all wrote to the same name and were renamed to `Talos1.0` at the end,
 so the intermediate stages no longer exist as files; step 7's six round
@@ -936,8 +1006,9 @@ and 6 belong to the heuristic-cloning lineage (`cloned` →
 `pooledWithLookahead` → `pooledFinetuned`, and `cloned` → `tunedEnt000`), which
 is therefore an ancestor of the *training signal* rather than of the weights.
 
-Only step 7 is reproducible from what is on disk: `progressivePhase1.py` fixes
-seed 42 and rebuilds every round from `Talos1.0`. Steps 1-6 are not, and
+Steps 7 and 8 are reproducible from what is on disk: `progressivePhase1.py` and
+`progressivePhase2.py` both fix seed 42 and rebuild every round from
+`Talos1.0`. Steps 1-6 are not, and
 `Talos1.0` is consequently the oldest thing here that cannot be regenerated —
 which is the reason it is kept even though `Talos1.1` supersedes it.
 

@@ -52,6 +52,10 @@ python -m scripts.train --steps 300000 --init models/cloned \
 # Six rounds of checkpoint-only self-play, producing the next tuned model
 python -m scripts.progressivePhase1
 
+# Five 300k rounds with a sampling opponent -- how Talos1.2 was built, and the
+# strongest recipe measured so far. Branches from Talos1.0, never from Talos1.1
+python -m scripts.progressivePhase2
+
 # Open the first six plies at random -- three per side, counted in total --
 # so training does not keep replaying the same few positions. Measured once
 # and it did not produce a stronger model; see ARCHITECTURE.md before reaching
