@@ -68,6 +68,118 @@ def test_the_opponent_draw_is_reproducible_from_a_seed():
         assert first.opponentStrategy == second.opponentStrategy
 
 
+def test_opponent_sampling_needs_a_checkpoint_to_sample():
+    # A heuristic has no distribution, so this combination would quietly do
+    # nothing -- and a run configured that way would look varied and not be.
+    with pytest.raises(ValueError, match="opponentSampling needs"):
+        HalmaEnv(opponentStrategy="bottleneck", opponentSampling=0.5)
+
+
+@pytest.mark.parametrize("fraction", [-0.1, 1.5])
+def test_opponent_sampling_outside_zero_to_one_is_refused(fraction, checkpoint):
+    with pytest.raises(ValueError, match="probability"):
+        HalmaEnv(opponentModel=checkpoint, opponentSampling=fraction)
+
+
+def opponentStyles(env, episodes=20):
+    """Whether the neural opponent played argmax, per episode."""
+    styles = []
+    for seed in range(episodes):
+        env.reset(seed=seed)
+        assert env._opponentNeural is not None
+        styles.append(env._opponentNeural.deterministic)
+    return styles
+
+
+def test_a_checkpoint_opponent_plays_argmax_unless_sampling_is_asked_for(checkpoint):
+    # The default has to stay exactly what every recorded result was measured
+    # against: the opponent's actual best move, every episode.
+    assert all(opponentStyles(HalmaEnv(opponentModel=checkpoint)))
+
+
+def test_full_opponent_sampling_makes_it_play_its_distribution_every_episode(checkpoint):
+    assert not any(opponentStyles(HalmaEnv(opponentModel=checkpoint, opponentSampling=1.0)))
+
+
+def test_partial_opponent_sampling_mixes_both_kinds_of_episode(checkpoint):
+    # The point of the fraction: the argmax opponent stays in the data
+    # alongside the sampled one, rather than being replaced by it.
+    styles = opponentStyles(HalmaEnv(opponentModel=checkpoint, opponentSampling=0.5))
+    assert any(styles) and not all(styles)
+
+
+def test_the_opponent_style_draw_is_reproducible_from_a_seed(checkpoint):
+    first = HalmaEnv(opponentModel=checkpoint, opponentSampling=0.5)
+    second = HalmaEnv(opponentModel=checkpoint, opponentSampling=0.5)
+    assert opponentStyles(first) == opponentStyles(second)
+
+
+def openingPosition(env, seed):
+    """The two piece planes after a reset, as a hashable snapshot."""
+    obs, _ = env.reset(seed=seed)
+    return obs["board"][:2].tobytes()
+
+
+def ownOpeningPieces(env, seed):
+    """Just the agent's own plane after a reset."""
+    obs, _ = env.reset(seed=seed)
+    return obs["board"][0].tobytes()
+
+
+def test_the_opening_is_fixed_unless_random_plies_are_asked_for():
+    # By default the agent's first decision is always made from its home
+    # corner untouched -- which is what every earlier checkpoint trained and
+    # was measured on. (The *opponent's* pieces do vary a little even here,
+    # because the play order is drawn and it may have replied already.)
+    env = HalmaEnv()
+    assert len({ownOpeningPieces(env, seed) for seed in range(10)}) == 1
+
+
+def test_random_opening_plies_vary_the_starting_position():
+    env = HalmaEnv(randomOpeningPlies=6)
+    assert len({openingPosition(env, seed) for seed in range(10)}) == 10
+    # Both sides open at random, not just the opponent: an even count splits
+    # the plies evenly, so the agent has played three of these six itself.
+    assert len({ownOpeningPieces(env, seed) for seed in range(10)}) > 1
+
+
+def test_random_opening_plies_leave_the_agent_on_turn():
+    # reset() must hand back a position the agent can actually step from,
+    # whether the random opening ended on its turn or the opponent's.
+    env = HalmaEnv(randomOpeningPlies=6)
+    for seed in range(10):
+        env.reset(seed=seed)
+        assert env._isAgentsTurn()
+
+
+def test_the_random_opening_is_reproducible_from_a_seed():
+    # It is drawn from the env's own generator, so an episode seed reproduces
+    # the opening along with everything else -- not a second, loose source of
+    # randomness beside it.
+    first, second = HalmaEnv(randomOpeningPlies=6), HalmaEnv(randomOpeningPlies=6)
+    for seed in range(10):
+        assert openingPosition(first, seed) == openingPosition(second, seed)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 7, 11])
+def test_shaping_still_telescopes_from_a_random_opening(seed):
+    # The random plies move the board before phi(s0) is taken, so the property
+    # that shaping cannot redirect the agent has to hold from wherever they
+    # left it -- otherwise a varied opening would quietly reintroduce the bias
+    # potential-based shaping exists to avoid.
+    shaped, startingPotential, terminated = playRandomEpisode(
+        HalmaEnv(shapingWeight=1.0, gamma=GAMMA, randomOpeningPlies=6), seed
+    )
+    plain, _, _ = playRandomEpisode(
+        HalmaEnv(shapingWeight=0.0, gamma=GAMMA, randomOpeningPlies=6), seed
+    )
+    if not terminated:
+        pytest.skip("relation is deliberately not upheld across a time-limit truncation")
+    assert discountedReturn(shaped) - discountedReturn(plain) == pytest.approx(
+        -startingPotential, abs=1e-9
+    )
+
+
 def test_unshaped_reward_is_almost_always_zero():
     # The problem shaping exists to solve: one signal per episode, and a random
     # agent never wins at all, so it sees nothing but the final -1.

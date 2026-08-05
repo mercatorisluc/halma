@@ -276,6 +276,31 @@ def main() -> None:
         action="store_true",
         help="train only against --opponentModelPool, never a heuristic",
     )
+    # Per-episode chance that a checkpoint opponent plays its distribution
+    # rather than its best move -- see HalmaEnv. Training only, like
+    # --randomOpening: the evaluations below keep the argmax opponent, since
+    # that is what every recorded number was measured against.
+    parser.add_argument(
+        "--opponentSampling",
+        type=float,
+        default=0.0,
+        help=(
+            "fraction of episodes in which a checkpoint opponent plays sampled instead of "
+            "argmax, to widen the positions training sees"
+        ),
+    )
+    # Random opening plies -- see HalmaEnv. Training only: the evaluations
+    # below deliberately keep the standard opening, so their numbers stay
+    # comparable with every result already recorded for earlier checkpoints.
+    parser.add_argument(
+        "--randomOpening",
+        type=int,
+        default=0,
+        help=(
+            "random legal plies played before the agent moves, to vary the opening; "
+            "counted in total, so 6 is three per side"
+        ),
+    )
     parser.add_argument(
         "--reportEvery", type=int, default=25_000, help="steps between progress reports"
     )
@@ -310,6 +335,8 @@ def main() -> None:
                 opponentModelPool=args.opponentModelPool,
                 shapingWeight=args.shaping,
                 gamma=args.gamma,
+                opponentSampling=args.opponentSampling,
+                randomOpeningPlies=args.randomOpening,
             )
 
         return build
@@ -323,6 +350,8 @@ def main() -> None:
             opponentModelPool=args.opponentModelPool,
             shapingWeight=args.shaping,
             gamma=args.gamma,
+            opponentSampling=args.opponentSampling,
+            randomOpeningPlies=args.randomOpening,
         )
     )
 
@@ -344,6 +373,16 @@ def main() -> None:
         print(f"training pool {trainingOpponents}, {args.steps} steps, gamma {args.gamma}\n")
     else:
         print(f"opponent {args.opponent}, {args.steps} steps, gamma {args.gamma}\n")
+    if args.randomOpening:
+        print(
+            f"training openings: first {args.randomOpening} plies random "
+            f"(evaluations below use the standard opening)\n"
+        )
+    if args.opponentSampling:
+        print(
+            f"training opponents: sampled in {args.opponentSampling:.0%} of episodes "
+            f"(evaluations below face the argmax opponent)\n"
+        )
     print("before training (random agent):")
     for opponent in opponents:
         report(f"vs {opponent}", evaluate(None, opponent, args.games))

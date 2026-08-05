@@ -62,6 +62,36 @@ class HalmaEnv(gym.Env):
     mix heuristic and tuned-model opponents rather than being limited to one
     or the other. Every checkpoint is loaded once, here, for the same reason
     ``opponentModel`` is.
+
+    ``opponentSampling`` is the fraction of episodes in which a *neural*
+    opponent plays its own distribution instead of its argmax move. A frozen
+    checkpoint answers a given position identically every time, so a run
+    against one revisits a narrow band of the game tree however many episodes
+    it plays; sampling widens that band with moves the opponent itself
+    considers plausible, which is the difference between this and
+    ``randomOpeningPlies`` -- that varies the position with uniformly random
+    moves, this varies the opponent with its own. The draw is per episode
+    rather than per move, so a game is played against one coherent opponent,
+    and the argmax opponent still supplies ``1 - opponentSampling`` of the
+    episodes: a mixture on purpose, because the one run that replaced the
+    standard case outright rather than mixing it lost measurably on the
+    distribution it stopped seeing (ARCHITECTURE.md). Heuristics have no
+    distribution to sample, so a value above zero without any checkpoint to
+    apply it to is refused rather than silently ignored.
+
+    ``randomOpeningPlies`` plays that many uniformly random legal moves before
+    handing control to the agent, so an episode starts from a varied position
+    rather than the one opening the game always has. It exists because two
+    argmax policies facing each other have only two possible games -- see
+    ``scripts/compareCheckpoints.py`` -- and a frozen checkpoint opponent is
+    close enough to that for training to see the same handful of positions
+    over and over. The plies are counted in total, not per side, and are
+    played by whoever is on turn -- so an even count gives both sides the same
+    number of them and an odd one hands the extra ply to whoever the play
+    order put first. They are part of the reset, not of the episode: the agent
+    is never asked for them and is never trained on them,
+    and ``previousPotential`` is taken afterwards so the shaping still
+    telescopes from wherever the random opening left the board.
     """
 
     AGENT_SEAT = 1
@@ -76,6 +106,8 @@ class HalmaEnv(gym.Env):
         shapingWeight: float = 1.0,
         gamma: float = 0.99,
         selfSeat: int = AGENT_SEAT,
+        opponentSampling: float = 0.0,
+        randomOpeningPlies: int = 0,
     ) -> None:
         super().__init__()
         # Which seat's viewpoint the observation is built from. Everything
@@ -139,11 +171,26 @@ class HalmaEnv(gym.Env):
                     "supply the opponent"
                 )
             self._opponentNeural = self._opponentModelPool[0]
+        # Refused rather than ignored: with no checkpoint anywhere in the
+        # draw there is nothing whose distribution could be sampled, so the
+        # setting would do nothing at all and the run would look like it had
+        # varied opponents when it had not.
+        if not 0.0 <= opponentSampling <= 1.0:
+            raise ValueError("opponentSampling is a probability, so it must lie in [0, 1]")
+        if opponentSampling > 0.0 and opponentModel is None and not opponentModelPool:
+            raise ValueError(
+                "opponentSampling needs opponentModel or opponentModelPool: a heuristic has "
+                "no distribution to sample"
+            )
+        self.opponentSampling = opponentSampling
         # gamma has to be the discount the agent is trained with, or the
         # shaping stops being policy-invariant. shapingWeight = 0 turns shaping
         # off, which is how to measure whether it is earning its keep.
         self.shapingWeight = shapingWeight
         self.gamma = gamma
+        if randomOpeningPlies < 0:
+            raise ValueError("randomOpeningPlies cannot be negative")
+        self.randomOpeningPlies = randomOpeningPlies
         self.previousPotential = 0.0
         # (position version, encoded legal moves) -- see _legalActions.
         self._legalCache: tuple[int, list[int]] | None = None
@@ -235,6 +282,14 @@ class HalmaEnv(gym.Env):
                 self._opponentNeural = None
             else:
                 self._opponentNeural = self._opponentModelPool[draw - len(self.opponentPool)]
+        # How the drawn checkpoint will play this episode: its best move, or
+        # its distribution. Drawn after the opponent itself, since it is that
+        # opponent's flag being set, and only when asked for -- guarding the
+        # draw keeps the random stream of every run that does not use this
+        # byte-identical to before it existed, so earlier results stay
+        # reproducible from their seeds.
+        if self._opponentNeural is not None and self.opponentSampling > 0.0:
+            self._opponentNeural.deterministic = self.np_random.random() >= self.opponentSampling
         # The engine has its own generator; seeding it is what makes a whole
         # episode reproducible, since seat order and the opponent's tie-breaks
         # both draw from it.
@@ -243,6 +298,10 @@ class HalmaEnv(gym.Env):
         # A new game restarts the move count, so last episode's entry would
         # look current.
         self._legalCache = None
+        # Before anyone's policy is consulted: a random opening, if asked for.
+        # Played first so the play order still decides who makes the first of
+        # those moves, exactly as it decides who makes the first real one.
+        self._playRandomOpening()
         # Play order is randomised, so the opponent may be on move first.
         self._playOpponentUntilAgentsTurn()
         self.previousPotential = self._potential()
@@ -470,6 +529,28 @@ class HalmaEnv(gym.Env):
         normalizedMove = self.decodeAction(int(action))
         move = self.normalizer.inverseMove(normalizedMove, self._permutationKey(player))
         self.game.playMove(player, (int(move[0]), int(move[1])))
+
+    def _playRandomOpening(self) -> None:
+        """Open with ``randomOpeningPlies`` uniformly random legal moves.
+
+        Drawn from ``self.np_random``, which ``reset()`` has just seeded, so
+        the opening is part of what an episode seed reproduces rather than a
+        second source of randomness beside it. Both sides play theirs: the
+        point is to move the *position* off the one fixed opening, and only
+        randomising the agent's own moves would leave the opponent replying
+        from its usual book.
+
+        Nobody can have won this early -- the shortest game here is far longer
+        than any opening worth randomising -- but the winner check is kept
+        anyway, so a larger ``randomOpeningPlies`` cannot walk past the end of
+        a game.
+        """
+        for _ in range(self.randomOpeningPlies):
+            if self.game.winner() is not None:
+                break
+            player = self.game.currentPlayer()
+            moves = self.board.allValidMovesWithWay(player)
+            self.game.playMove(player, moves[int(self.np_random.integers(len(moves)))])
 
     def _playOpponentUntilAgentsTurn(self) -> None:
         while (

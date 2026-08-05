@@ -52,9 +52,31 @@ python -m scripts.train --steps 300000 --init models/cloned \
 # Six rounds of checkpoint-only self-play, producing the next tuned model
 python -m scripts.progressivePhase1
 
+# Open the first six plies at random -- three per side, counted in total --
+# so training does not keep replaying the same few positions. Measured once
+# and it did not produce a stronger model; see ARCHITECTURE.md before reaching
+# for it again.
+python -m scripts.train --steps 300000 --init models/Talos1.1 \
+    --opponentModel models/Talos1.0 --randomOpening 6 \
+    --lr 1e-4 --targetKl 0.02 --entropy 0.03 --name models/next
+
+# Let a checkpoint opponent play its distribution in half the episodes, so
+# training is not answered the same way in every position it revisits
+python -m scripts.train --steps 300000 --init models/Talos1.0 \
+    --noHeuristicOpponents --opponentModelPool models/Talos1.0 \
+    --opponentSampling 0.5 --lr 1e-4 --targetKl 0.02 --name models/next
+
+# Score checkpoints against the heuristics -- the yardstick, on its own rather
+# than as the tail of a training run
+python -m scripts.evaluateAgainstBots models/Talos1.0 models/Talos1.1
+
 # Compare two checkpoints over all 800 two-ply openings -- the yardstick once
 # the heuristics saturate at 100%
 python -m scripts.openingSweep models/Talos1.0 models/Talos1.1
+
+# Compare them off the beaten track instead: random starting positions, each
+# played twice with the seats swapped. Baseline in ARCHITECTURE.md
+python -m scripts.randomPositionSweep models/Talos1.0 models/Talos1.1
 
 # Watch one of those games, stepping the history with the arrow keys
 python -m scripts.replayGame --opening 6,26 66,67 --start 70 \

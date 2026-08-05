@@ -318,6 +318,49 @@ not true self-play, and the distinction is the same one drawn for
 run. Emptying the heuristic pool changes *who* is in the league, not whether
 the opponent tracks the learner.
 
+`opponentSampling` is the fraction of episodes in which a checkpoint opponent
+plays its own distribution rather than its argmax move. It addresses the
+*opponent* where `randomOpeningPlies` below addresses the *position*, and the
+distinction is what the failed random-opening run turned on: varying the
+starting position did not stop the learner specialising against one frozen
+sparring partner, because that partner still answered every position it was
+handed identically. Sampling widens the tree with moves the opponent itself
+considers plausible, which is the difference from a uniformly random ply —
+those go anywhere, including places no game reaches. The draw is per episode,
+not per move, so a game is played against one coherent opponent, and the argmax
+opponent still supplies `1 - opponentSampling` of the episodes: a mixture on
+purpose, since the run that replaced the standard case outright rather than
+mixing it lost measurably on the distribution it stopped seeing (below). Only
+neural opponents have a distribution to sample, so `opponentSampling > 0` with
+no checkpoint anywhere in the draw is refused rather than silently ignored, and
+the draw itself is skipped entirely at 0 — which keeps the random stream of
+every earlier run byte-identical, so their seeds still reproduce.
+`scripts/train.py --opponentSampling F` wires it up, for training only: the
+evaluations keep the argmax opponent every recorded number was measured
+against.
+
+`randomOpeningPlies` plays that many uniformly random legal moves before the
+agent is asked for anything, so an episode starts from a varied position
+instead of the single opening the game otherwise always has. It addresses the
+*positions*, not the opponent: a frozen checkpoint answers a given position the
+same way every time, so training against one from a fixed opening revisits a
+narrow band of the game tree — the same argument `scripts/compareCheckpoints.py`
+makes about argmax play having only two possible games per pairing, and the
+same one `scripts/openingSweep.py` answers by enumerating openings for
+measurement rather than training. Both sides play their share of the random
+plies, because randomising only the agent's would leave the opponent replying
+out of its usual book. They are counted in total rather than per side and fall
+to whoever is on turn, so an even count splits them evenly and an odd one hands
+the extra ply to whoever the play order put first — `--randomOpening 6` is
+three random moves each, which is what the run below used. The plies belong to `reset()`, not to the episode: the
+agent is never asked for them and never trained on them, and `previousPotential`
+is taken afterwards so the shaping still telescopes from wherever the opening
+left the board — pinned by a test, since a varied start is exactly the sort of
+change that could quietly reintroduce the bias potential-based shaping exists to
+avoid. `scripts/train.py --randomOpening N` wires it up, and deliberately only
+for training: the before/after evaluations keep the standard opening so their
+numbers stay comparable with every result already recorded here.
+
 `boardNormalizer.Normalizer` precomputes field-id permutations for each player's
 viewpoint (`player1WithFlip`, `player2WithoutFlip`, … plus inverses) that map
 any player/orientation into one canonical frame, so a single policy learns one
@@ -526,6 +569,37 @@ canonical observation and reproducible seeding.
 trained agent has to clear. The number that shaped the plan: **a random agent
 wins none of 700 games**, so an untrained policy sees the same reward in
 essentially every episode. That is why shaping came before training.
+
+`scripts/evaluateAgainstBots.py` is the other half of that yardstick: a
+checkpoint against the bots, argmax and sampled, for as many checkpoints as
+asked for. `baseline.py` covers bot against bot and `compareCheckpoints.py`
+checkpoint against checkpoint; this third side existed only as the tail of a
+training run, so re-measuring an existing checkpoint meant training something
+to get the report. `lookahead2` is ~20x slower per game than the scoring bots,
+which is what `--bots` is for.
+
+`scripts/randomPositionSweep.py` measures the one thing none of those do:
+whether a checkpoint plays well from positions it has no reason to be familiar
+with. Every other yardstick here starts a game at the opening or two plies into
+it — the position a policy has seen most. This one deals each game a start of
+4–20 uniformly random legal plies, drawn from its own `--seed`ed generator so
+the same deal is handed to any pair of checkpoints. Uniformly random rather
+than sampled from either contestant, deliberately: a position distribution one
+side generated would favour that side, which is the one thing a benchmark must
+not do. The cost is that some deals are positions no sensible game reaches —
+that is the breadth being measured, but it does mean the score answers "how
+well does it cope off its own track", not "how strong is it", and
+`openingSweep.py` stays the answer to the second.
+
+**Each deal is played twice with the checkpoints swapping seats**, because a
+random position is not fair — it can hand one seat a won game before either
+policy moves — and neither is the side to move. The mirror cancels both
+exactly. The control that pins this: the same checkpoint on both sides scores
+50.0% ± 0.0 with every pair split, since two identical policies make the two
+games of a pair literally the same game. Unlike the opening sweep's census of
+all 800 two-ply openings, this is a *sample* of a much larger space, so the
+score does carry a confidence interval — and the unit for it is the pair, not
+the game, since the two games of a pair share a deal and are not independent.
 
 **Shaping was not enough on its own.** With the reward shaped, the geometry
 given to a CNN and the action head factored, PPO from scratch still ended a
@@ -752,6 +826,60 @@ the open question is whether forced openings represent free play rather than
 anything statistical. It also sizes the first-mover advantage properly at about
 **5 points** (`Talos1.1` 73.2% when starting against 67.8% when not) — the two
 games plain argmax produces make it look decisive, which it is not.
+
+**Random openings did not produce a stronger checkpoint, and the run is kept
+only as this paragraph.** 300k steps from `Talos1.1` against a frozen
+`Talos1.0`, six random opening plies (three per side), `--lr 1e-4 --targetKl
+0.02 --entropy 0.03 --seed 42`. The reasoning was sound and the result was not.
+Against the opponent it trained on it improved a lot — 800-opening sweep
+**85.1%** against `Talos1.0`, where `Talos1.1` scores 70.5% — but against
+`Talos1.1` itself it finished level: 49.9% to 45.8%, 4.4% drawn. So the 300k
+steps bought specialisation against one frozen sparring partner rather than
+strength, the same trap `--opponentPool` exists for, and randomising the
+opening did not prevent it: it varies the *positions*, not the opponent.
+
+The heuristic panel says the same thing from the other side, and adds a cost
+the sweep cannot see. Argmax is unchanged and at the ceiling — 98–100% across
+the five fast bots, identical to `Talos1.1`. *Sampled* is worse on every
+non-trivial bot: `sparsityScore` **42.0% ± 9.7** against `Talos1.1`'s 69.0% ±
+9.1, `bottleneck` 61% against 75%, `advancedDistScore` 76% against 85%. The
+`sparsityScore` gap is far outside both intervals, so the policy's best move is
+as good as before while its *distribution* got measurably worse — probability
+mass spread onto moves that are poor from the standard opening, which is the
+plausible cost of training away from that opening at entropy 0.03.
+
+Two things follow. The checkpoint was discarded rather than versioned, so
+`models/` still holds the Talos pair alone. And `randomOpeningPlies` was kept:
+the negative result is about this pairing and this budget, not about the
+mechanism, and the environment cannot answer the question a second time if the
+knob is removed with the checkpoint.
+
+The intermediate stands are worth recording, because they do not move in one
+direction: sweeping each against `Talos1.1` gives 53.0% at 100k, 46.9% at 200k,
+49.9% at 300k. Three points, no trend, all near level — nothing in the run
+suggests a longer budget would have arrived somewhere better. The 20-game
+progress column swung 25–55% across the same run while the true strength barely
+moved, which is worth remembering before reading anything into that column.
+
+**The baseline off the beaten track, measured 2026-08-05 before any of the
+breadth work:** over 200 mirrored deals of 4–20 random plies (400 games,
+seed 0), `Talos1.1` scores **60.4% ± 3.5** against `Talos1.0`. The edge is real
+and it is roughly ten points smaller than the same pairing's 70.5% on the
+opening sweep — so part of what six rounds of league play bought was strength
+on the track the league was played on. Depth of the deal does not visibly
+change it (`Talos1.0` scores 38.1% ± 5.0 on the shallow half and 41.5% ± 5.0 on
+the deep half, intervals overlapping), which says these two are not separated by
+how far off-track a position is, only by whether it is off-track at all.
+
+Two things about that measurement cap what it can ever show. **144 of the 200
+pairs were split** — each checkpoint won the side the deal put ahead — so most
+random positions are decided before either policy moves, and only the remaining
+quarter is where a strength difference can register at all. And **51 of the 400
+games were drawn, 12.8% against the opening sweep's 2%**: deterministic
+deadlock is six times more common from a random position than from the opening,
+which is a breadth weakness in its own right rather than a measurement
+artefact. Both argue for reading this score as a coarse instrument — a
+ten-point move means something, a two-point move does not.
 
 The 2% draws are all the same failure and are worth knowing about: two
 deterministic policies deadlock. `openingSweep.py` prints which openings drew

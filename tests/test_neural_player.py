@@ -11,28 +11,13 @@ import numpy as np
 import pytest
 from sb3_contrib import MaskablePPO
 
-from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
 from env.neuralPlayer import NeuralComputer
-from env.policy import FactoredMaskablePolicy
 from game.gameManager import ComputedGame, InteractiveGame
 from game.player import Computer, HumanPlayer
 
-
-@pytest.fixture(scope="module")
-def checkpoint(tmp_path_factory):
-    """An untrained policy on disk. Untrained is enough -- what is under test
-    is the encoding around the network, not the network."""
-    env = HalmaEnv()
-    model = MaskablePPO(
-        FactoredMaskablePolicy,
-        env,
-        policy_kwargs={"features_extractor_class": HalmaFeatures},
-        seed=0,
-    )
-    path = tmp_path_factory.mktemp("models") / "untrained"
-    model.save(path)
-    return str(path)
+# The ``checkpoint`` fixture -- an untrained policy on disk -- lives in
+# conftest.py, since tests/test_env.py needs the same one.
 
 
 def openingEnvironment(selfSeat: int = HalmaEnv.AGENT_SEAT):
