@@ -10,8 +10,11 @@ venv/
 env/.venv/
 
 # Trained agents. Binary, regenerable with scripts/train.py, and they would
-# bloat the history -- the numbers that matter live in commit messages.
-models/*.zip
+# bloat the history -- the numbers that matter live in commit messages. The
+# ** matters: train.py resolves --name against models/, so passing
+# "models/foo" writes models/models/foo.zip, which a single-level pattern
+# would leave showing up as untracked.
+models/**/*.zip
 
 # OS
 .DS_Store
