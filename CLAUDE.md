@@ -56,6 +56,10 @@ python -m scripts.progressivePhase1
 # strongest recipe measured so far. Branches from Talos1.0, never from Talos1.1
 python -m scripts.progressivePhase2
 
+# Four more 300k rounds, this time from Talos1.2 and measured against the
+# previous round rather than a fixed reference. Written, not yet run
+python -m scripts.progressivePhase3
+
 # Open the first six plies at random -- three per side, counted in total --
 # so training does not keep replaying the same few positions. Measured once
 # and it did not produce a stronger model; see ARCHITECTURE.md before reaching
@@ -73,6 +77,12 @@ python -m scripts.train --steps 300000 --init models/Talos1.0 \
 # Score checkpoints against the heuristics -- the yardstick, on its own rather
 # than as the tail of a training run
 python -m scripts.evaluateAgainstBots models/Talos1.0 models/Talos1.1
+
+# Seat a checkpoint behind one ply of search, against the bots. --noSearch is
+# the control through the same loop. As measured, the search plays worse than
+# the policy it wraps -- see ARCHITECTURE.md before building on it
+python -m scripts.evaluateSearch models/Talos1.2 --bots lookahead2 --games 25
+python -m scripts.evaluateSearch models/Talos1.2 --bots lookahead2 --noSearch
 
 # Compare two checkpoints over all 800 two-ply openings -- the yardstick once
 # the heuristics saturate at 100%

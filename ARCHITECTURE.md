@@ -250,6 +250,20 @@ used both to train and to play. That is also why `HalmaEnv.game` is typed as
 the `HalmaGame` base class rather than `ComputedGame`: only the base API is
 used, which is what lets the same encoder sit on an `InteractiveGame` too.
 
+`env/searchPlayer.py`'s `SearchingComputer` is a `NeuralComputer` that expands
+the policy's best moves one ply before committing: the policy orders the moves,
+the top `candidates` are played out, each answered by the top `replies` moves of
+the same network seated on the other side, and the critic evaluates the leaf. It
+is the only thing here that uses the value head at all — training fits it, and
+`NeuralComputer` never asks for it. Two details it depends on, both recorded in
+the module docstring: the critic's number is the *shaped* value, so `V' + w*phi`
+is what compares across positions, and `_legalCache` is keyed on the game's move
+count, which `moveApplied` does not bump, so it is cleared rather than trusted at
+every searched node. It also declines to re-enter a board state it has already
+been on turn in, which is a rule rather than something learned. Measured below:
+the search as built plays *worse* than the policy it wraps, and the repetition
+rule works.
+
 `HalmaEnv` takes a `selfSeat` (default `AGENT_SEAT`), and a `NeuralComputer`
 passes its own identifier through, so its encoder builds the observation from
 whichever seat it actually occupies. Training only ever uses seat 1, but this
@@ -1012,7 +1026,93 @@ Steps 7 and 8 are reproducible from what is on disk: `progressivePhase1.py` and
 `Talos1.0` is consequently the oldest thing here that cannot be regenerated —
 which is the reason it is kept even though `Talos1.1` supersedes it.
 
+### `lookahead2` is the one column that still moves, and `Talos1.2` fell on it
+
+Measured 2026-08-06, 60 games per mode, seed 10000, `scripts/evaluateAgainstBots`:
+
+| checkpoint | argmax | sampled | argmax home% |
+|---|---|---|---|
+| `Talos1.0` | 68.3 ± 11.8 | 33.3 ± 11.9 | 93.3 |
+| `Talos1.1` | **75.0 ± 11.0** | 13.3 ± 8.6 | 91.4 |
+| `Talos1.2` | **41.7 ± 12.5** | 33.3 ± 11.9 | 80.2 |
+
+This is the first measurement in which `Talos1.2` is worse than what it was
+built from, and the intervals do not overlap in either direction. It is also
+the one bot nothing in this project has ever trained against, and the only one
+that *searches* rather than scoring one ply — every other column has been at
+98–100% argmax since `Talos1.0`, and the two Talos-against-Talos instruments
+only ever compare the family with itself. So 1.5M rounds of league play bought
+strength against the league's own members and the fast bots (the sampled column
+above, 69%→90% against `sparsityScore`) while losing ground against the one
+opponent that plays differently. The old lineage's 25–46% against `lookahead2`
+is not the comparison to draw here: `Talos1.0` and `Talos1.1` are fine.
+
+The intervals are real ones. `Strategy.pickLowest` breaks ties from
+`player.rng`, so 60 games against `lookahead2` are 60 distinct games — unlike
+two argmax policies facing each other, where a pairing has only two.
+
+### Search on top of the critic makes the policy weaker, not stronger
+
+`env/searchPlayer.py` and `scripts/evaluateSearch.py`, 25 games per seat
+direction (50 total) against `lookahead2`, seed 10000, `Talos1.2`:
+
+| selection | win% | W | L | D | s/game |
+|---|---|---|---|---|---|
+| policy alone (`--noSearch`) | **30.0 ± 12.7** | 15 | 27 | 8 | 4.8 |
+| critic alone (6 × 0 replies) | 20.0 ± 11.1 | 10 | 40 | 0 | 4.8 |
+| critic + 1 reply | 20.0 ± 11.1 | 10 | 38 | 2 | 5.3 |
+| critic + 3 replies | 18.0 ± 10.6 | 9 | 39 | 2 | 5.6 |
+
+**The depth of the opponent ply changes nothing** — 0, 1 and 3 replies all land
+at 18–20%. The loss appears the moment the critic takes over move selection, so
+the failure is the evaluation, not the search, and not the "opponent plays as I
+would" assumption that was the first suspect. Any single arm overlaps the
+control's interval; three arms ten points below it do not read as noise.
+
+The likely reason is the training objective rather than the network. PPO fits
+the critic as a *baseline* for advantage estimation: it needs to be right on the
+trajectory distribution its own policy visits, and its errors largely cancel in
+`A = R - V`. Nothing ever asks it to rank two sibling positions, which is the
+only thing a search wants from it. Shaping sharpens the point — with `V' = V -
+w*phi` and `phi` added back explicitly, what remains of the critic's own
+contribution is exactly the part with the least training pressure.
+
+Capacity is a second candidate and is worth the numbers: of 689,403 parameters,
+632,392 sit in the feature extractor **shared with the policy**
+(`share_features_extractor=True`), and the value head is 20,673 — 256→64→64→1
+behind a bottleneck whose shape the policy determines. The 1×1 squeeze to 8
+channels before the flatten was a parameter-count decision that suits a policy
+("which piece, where") better than a value ("is this structure won").
+
+**The measurement that should come before any redesign** is whether the critic
+ranks siblings at better than chance: take a position, take the policy's two
+best moves, play both out, and check whether the critic's ordering matches the
+outcome. At ~50% no architecture change helps and the objective has to change
+(expert iteration, where a search supplies targets for policy *and* value); well
+above 50% and the capacity and observation work is worth doing. Not yet built.
+
+One thing the search did deliver: the repetition rule removes the deadlocks.
+Draws went 8 → 0/2 across the arms. That is the first evidence for the
+observation-level fix deferred to the next generation — and it says the fix does
+not need to be learned to work at play time.
+
+Two loose ends recorded rather than resolved. The two harnesses disagree about
+`Talos1.2` against `lookahead2` — 41.7% from `evaluateAgainstBots` (agent on
+`AGENT_SEAT`, play order drawn per game) against 30.0% from `evaluateSearch`
+(both seat directions, half the games on seat 2). A seat-2 weakness would
+explain the gap exactly and has history here (invariant 7), but nothing has
+checked it. And `env/searchPlayer.py` has no tests yet, where the rest of `env/`
+does.
+
 ### Next
+
+`scripts/progressivePhase3.py` is written and **not yet run**: four rounds of
+300k from `Talos1.2`, settings unchanged from phase 2, measured against the
+previous round rather than a fixed reference. The open question is whether to
+spend it, given that the league is what produced the `lookahead2` regression
+above — the script prints a sweep per round, and adding a `lookahead2` column
+per round would make the regression visible while it happens rather than
+afterwards.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.
