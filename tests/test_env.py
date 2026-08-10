@@ -470,3 +470,227 @@ def test_needs_flip_is_fixed_to_the_seats_home_corner_not_current_pieces():
     after = env._needsFlip(HalmaEnv.OPPONENT_SEAT)
 
     assert before == after
+
+
+def test_the_geometry_planes_look_the_same_from_either_seat():
+    """The point of the canonical frame, stated on the new planes.
+
+    A policy only ever learns one orientation, so the four zone planes and the
+    two distance maps must be *identical* whichever seat builds them -- even
+    though the two seats' zones are four different corners of the star and the
+    permutation taking each to canonical is a different one. If this drifts,
+    a checkpoint seated on OPPONENT_SEAT sees a board whose geometry contradicts
+    its pieces, which is precisely the failure invariant 7 was about.
+    """
+    fromSeat1 = HalmaEnv(selfSeat=HalmaEnv.AGENT_SEAT).geometryPlanes
+    fromSeat2 = HalmaEnv(selfSeat=HalmaEnv.OPPONENT_SEAT).geometryPlanes
+    np.testing.assert_array_equal(fromSeat1, fromSeat2)
+
+
+def test_the_geometry_planes_are_aligned_with_the_piece_planes():
+    """Built by a different route than the piece planes, so alignment is a
+    property to pin rather than assume: at the opening every own piece stands
+    on its own start zone and no piece is anywhere else, so plane 0 and the own
+    start plane have to agree cell for cell."""
+    env = HalmaEnv()
+    observation, _ = env.reset(seed=0)
+    board = observation["board"]
+    if env.game.gameLength() == 0:
+        np.testing.assert_array_equal(board[0], board[4])
+    # Whatever the play order did, the opponent's pieces start on the
+    # opponent's start zone, and no opponent move can have emptied it entirely.
+    assert float((board[1] * board[6]).sum()) > 0
+
+
+def test_closeness_peaks_exactly_on_the_target_zone():
+    """The distance maps are 1 on the zone and below 1 everywhere else, which
+    is what makes them a gradient towards it rather than a second zone plane."""
+    env = HalmaEnv()
+    observation, _ = env.reset(seed=0)
+    board = observation["board"]
+    ownTarget, ownCloseness = board[3], board[7]
+    assert float(ownCloseness[ownTarget > 0].min()) == 1.0
+    offZone = env.boardMask.astype(bool) & (ownTarget == 0)
+    assert float(ownCloseness[offZone].max()) < 1.0
+
+
+def test_the_geometry_planes_do_not_move_during_a_game():
+    """Constant is the whole premise: they are painted once in __init__ and
+    copied into every observation, so a game that changed them would mean the
+    observation and the cached planes had come apart."""
+    env = HalmaEnv()
+    rng = np.random.default_rng(0)
+    observation, _ = env.reset(seed=0)
+    opening = observation["board"][3:].copy()
+    for _ in range(20):
+        legal = np.flatnonzero(env.action_masks())
+        observation, _, terminated, truncated, _ = env.step(int(rng.choice(legal)))
+        np.testing.assert_array_equal(observation["board"][3:], opening)
+        if terminated or truncated:
+            break
+
+
+def test_no_jump_ever_changes_a_pieces_parity_class():
+    """The claim the whole parity feature rests on, checked against the real
+    move generator rather than against the coordinate arithmetic it was derived
+    from. Every jump delta is even in both coordinates, so a jump -- and so any
+    chain of them, however long -- lands in the class it started in. A single
+    step always leaves it.
+    """
+    env = HalmaEnv()
+    env.reset(seed=0)
+    rng = np.random.default_rng(0)
+    jumps = steps = 0
+    for _ in range(40):
+        player = env.game.currentPlayer()
+        for way in env.board.allValidMovesWithWay(player):
+            sameClass = env.parityClass[way[0]] == env.parityClass[way[-1]]
+            if env.board.isJumpMove(way[0], way[-1]):
+                jumps += 1
+                assert sameClass, f"jump {way} left its class"
+            else:
+                steps += 1
+                assert not sameClass, f"single step {way} stayed in its class"
+        legal = np.flatnonzero(env.action_masks())
+        _, _, terminated, truncated, _ = env.step(int(rng.choice(legal)))
+        if terminated or truncated:
+            break
+    # A run that generated no jumps would pass vacuously.
+    assert jumps > 100 and steps > 100
+
+
+def test_the_parity_mismatch_is_zero_at_both_ends_of_the_game():
+    """Start and target zone have the same class distribution (6/3/3/3), so the
+    opening is already matched, and a won position has neither stragglers nor
+    open targets. That is what keeps the potential running exactly 0 to 1 with
+    the penalty switched on -- the penalty is a detour, not a shift of scale."""
+    env = HalmaEnv()
+    env.reset(seed=0)
+    agent = env._player(HalmaEnv.AGENT_SEAT)
+    assert env._parityMismatch(agent) == 0
+    assert env._potential() == pytest.approx(0.0)
+
+    for field in env.board.fields:
+        if field.playerID == agent.identifier:
+            field.removePlayer()
+    for target in agent.endPositions:
+        env.board.fields[target].playerID = agent.identifier
+    agent.positions = set(agent.endPositions)
+    agent.nonArrived = set()
+    agent.openEndPositions = set()
+    agent.distanceScore = env.board.calculatePlayerDistanceScore(agent)
+
+    assert env._parityMismatch(agent) == 0
+    assert env._potential() == pytest.approx(1.0)
+
+
+def test_the_parity_penalty_keeps_the_potential_in_range_and_never_flat():
+    """The two properties the subtractive form broke, pinned together because
+    the obvious fix for either one breaks the other: subtracting sent early
+    plies negative, and clamping that at zero made consecutive clamped plies
+    produce exactly zero shaping. Multiplying keeps the potential in [0, 1]
+    without ever flattening it while the agent is moving."""
+    env = HalmaEnv(parityWeight=1.0, gamma=GAMMA)
+    rng = np.random.default_rng(0)
+    env.reset(seed=0)
+    for _ in range(200):
+        assert 0.0 <= env._potential() <= 1.0
+        legal = np.flatnonzero(env.action_masks())
+        _, reward, terminated, truncated, _ = env.step(int(rng.choice(legal)))
+        assert reward != 0.0, "shaping must still put a signal on every step"
+        if terminated or truncated:
+            break
+
+
+def test_turning_the_parity_weight_off_restores_the_travel_only_potential():
+    """The control every parity result has to be measured against: at weight 0
+    the potential must be bit-for-bit what it was before the penalty existed."""
+    penalised = HalmaEnv(parityWeight=0.5)
+    control = HalmaEnv(parityWeight=0.0)
+    rng = np.random.default_rng(0)
+    penalised.reset(seed=0)
+    control.reset(seed=0)
+    differed = False
+    for _ in range(60):
+        agent = control._player(HalmaEnv.AGENT_SEAT)
+        travel = 1.0 - control._progress(agent) / control.openingProgress
+        assert control._potential() == pytest.approx(travel)
+        if control._potential() != pytest.approx(penalised._potential()):
+            differed = True
+        legal = np.flatnonzero(control.action_masks())
+        action = int(rng.choice(legal))
+        _, _, terminated, truncated, _ = control.step(action)
+        penalised.step(action)
+        if terminated or truncated:
+            break
+    # Otherwise the control would be trivially satisfied by a penalty that
+    # never fires at all.
+    assert differed
+
+
+def test_the_class_planes_are_one_hot_over_every_raster_cell():
+    """One-hot rather than a number because the four classes are mutually one
+    single step apart -- no ordering to encode -- and painted over all 289
+    cells rather than the 121 real fields, because parity belongs to the raster
+    and stopping it at the star's edge would fake a discontinuity right where a
+    3x3 kernel straddles the boundary."""
+    env = HalmaEnv()
+    observation, _ = env.reset(seed=0)
+    classPlanes = observation["board"][9:13]
+    assert set(np.unique(classPlanes)) == {0.0, 1.0}
+    np.testing.assert_array_equal(classPlanes.sum(axis=0), np.ones((17, 17)))
+    # The void included: 289, not the 121 the mask covers.
+    assert float(classPlanes.sum()) == 289.0
+
+
+def test_every_class_is_one_single_step_from_every_other():
+    """Why the encoding carries no metric. All three step deltas are odd in at
+    least one coordinate, so from any class a single step reaches all three
+    others -- the classes form a complete graph, and any encoding implying near
+    and far classes (an ordinal 1..4, or a two-bit Hamming code) would misstate
+    the board."""
+    env = HalmaEnv()
+    reachable = {cls: set() for cls in range(4)}
+    for field in env.board.fields:
+        for neighbour in field.neighbours:
+            reachable[int(env.parityClass[field.id])].add(int(env.parityClass[neighbour]))
+    for cls in range(4):
+        assert reachable[cls] == {0, 1, 2, 3} - {cls}
+
+
+def test_the_class_planes_partition_the_board_the_way_the_raw_classes_do():
+    """The labels may differ and the partition may not.
+
+    ``parityClass`` is read off raw coordinates and the planes off canonical
+    ones, and a rotation permutes the four labels -- which is exactly why
+    ``_parityMismatch`` may sum over all four and ignore the frame. What must
+    survive is the grouping: two fields share a class in one frame iff they
+    share one in the other. Nothing cross-references the labels themselves, and
+    this is the test that says that is safe.
+    """
+    env = HalmaEnv()
+    observation, _ = env.reset(seed=0)
+    classPlanes = observation["board"][9:13]
+    rows, cols = env.rasterIndex[:, 0], env.rasterIndex[:, 1]
+    canonical = classPlanes.argmax(axis=0)[rows, cols]
+    # The raw labels pushed through the same permutation the planes went
+    # through, so both are indexed by canonical field id.
+    raw = env.normalizer.permute(env.parityClass, env._selfKey)
+
+    mapping = {}
+    for rawLabel, canonicalLabel in zip(raw, canonical, strict=True):
+        mapping.setdefault(int(rawLabel), int(canonicalLabel))
+        assert mapping[int(rawLabel)] == int(canonicalLabel), "the partition differs"
+    assert len(set(mapping.values())) == len(mapping) == 4, "the relabelling must be a bijection"
+
+
+def test_the_same_class_distance_map_is_not_a_rescaling_of_the_other():
+    """Plane 8 restricts the target set to the field's own class, so it is
+    always at least the unrestricted distance and strictly more wherever the
+    nearest target sits across a class boundary -- 56 of 121 fields."""
+    env = HalmaEnv()
+    agent = env._player(HalmaEnv.AGENT_SEAT)
+    sameClass = env._sameClassDistances(agent)
+    anyClass = env.distanceToTarget
+    assert np.all(sameClass >= anyClass)
+    assert int((sameClass > anyClass).sum()) == 56

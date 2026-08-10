@@ -219,6 +219,15 @@ def main() -> None:
     parser.add_argument("--games", type=int, default=100, help="evaluation games")
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--shaping", type=float, default=1.0)
+    # How hard the potential charges for pieces that still owe a parity change
+    # -- see HalmaEnv._parityMismatch. 0 is the control: it restores the
+    # travel-only potential every result recorded before 2026-08-07 used.
+    parser.add_argument(
+        "--parity",
+        type=float,
+        default=0.25,
+        help="weight of the parity penalty in the potential (0 turns it off)",
+    )
     parser.add_argument("--seed", type=int, default=0)
     # sb3 defaults this to 0. With a per-step signal this small the policy
     # can collapse onto an arbitrary subset of moves before the reward has
@@ -337,6 +346,7 @@ def main() -> None:
                 gamma=args.gamma,
                 opponentSampling=args.opponentSampling,
                 randomOpeningPlies=args.randomOpening,
+                parityWeight=args.parity,
             )
 
         return build
@@ -352,6 +362,7 @@ def main() -> None:
             gamma=args.gamma,
             opponentSampling=args.opponentSampling,
             randomOpeningPlies=args.randomOpening,
+            parityWeight=args.parity,
         )
     )
 

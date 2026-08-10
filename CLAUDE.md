@@ -41,6 +41,11 @@ python -m scripts.baseline --games 150
 # Clone a heuristic bot into the policy (PPO from scratch does not get there)
 python -m scripts.pretrain --samples 150000 --epochs 12
 
+# The control for the parity penalty in the potential -- see ARCHITECTURE.md.
+# Default is --parity 0.25; 0 restores the travel-only potential every result
+# recorded before 2026-08-07 was measured with
+python -m scripts.train --steps 300000 --init models/cloned --parity 0
+
 # Fine-tune that clone with PPO and score it against the yardstick
 python -m scripts.train --steps 300000 --games 200 --init models/cloned
 
@@ -48,6 +53,22 @@ python -m scripts.train --steps 300000 --games 200 --init models/cloned
 # just specialise to --opponent
 python -m scripts.train --steps 300000 --init models/cloned \
     --opponentPool advancedDistScore sparsityScore bottleneck
+
+# The three stages that build a .0 model, in order -- see ARCHITECTURE.md for
+# what each one measured. Stage 2 is two runs: the clone is fine-tuned against
+# heuristics alone, then against heuristics and checkpoints mixed.
+python -m scripts.pretrain --samples 500000 --epochs 12 \
+    --expert advancedDistScore sparsityScore bottleneck --name clone
+python -m scripts.train --steps 300000 --games 200 --init models/clone \
+    --opponentPool advancedDistScore sparsityScore bottleneck \
+    --lr 1e-4 --targetKl 0.02 --name stage2a
+python -m scripts.train --steps 500000 --games 200 --init models/stage2a \
+    --opponentPool advancedDistScore simpleDistScore sparsityScore bottleneck random \
+    --opponentModelPool models/clone --lr 1e-4 --targetKl 0.02 --name stage2b
+python -m scripts.talos2League   # stage 3; edit INIT to point at stage2b
+
+# Note that --name is prefixed with models/ by scripts.train, so pass a bare
+# name: --name models/foo writes models/models/foo.zip.
 
 # Six rounds of checkpoint-only self-play, producing the next tuned model
 python -m scripts.progressivePhase1

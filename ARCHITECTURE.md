@@ -278,6 +278,172 @@ a full round. Only ~65 of 14641 encoded actions are legal at a time, so
 `action_masks()` is not optional: without it the policy would spend itself
 learning which actions are illegal rather than which are good.
 
+#### What the network is shown
+
+The observation is a `Dict` of a `(14, 17, 17)` board and five scalars. The
+board is the 17×17 raster `fieldNumber` already embeds the hex star in, which
+is what lets a convolution see that neighbouring fields are neighbours at all —
+a flat 121-vector hides that completely.
+
+| # | plane | changes during a game |
+|---|---|---|
+| 0 | own pieces | yes |
+| 1 | opponent pieces | yes |
+| 2 | field mask — which of the 289 cells are real fields | no |
+| 3 | own target zone | no |
+| 4 | own start zone | no |
+| 5 | opponent target zone | no |
+| 6 | opponent start zone | no |
+| 7 | closeness to own target, `1 - d/max(d)` | no |
+| 8 | closeness to the opponent's target | no |
+| 9–12 | jump class, one-hot over the 4 classes | no |
+| 13 | closeness to a *same-class* own target | no |
+
+Scalars: move-budget progress, own pieces home, opponent pieces home, own
+mobility, parity mismatch.
+
+Planes 3–13 are **constant**, and were left out for exactly that reason until
+2026-08-07 — after normalisation the zones never move, so they carry no
+information about the position. That argument is right about information and
+wrong about what a convolution can use: conv weights are shared across the
+board, so the stack is translation invariant and literally cannot tell which
+end of the star a pattern it has found is sitting at. Planes 3–13 are the
+positional encoding that breaks that invariance. The gain is confined to the
+conv stack — the flatten hands the head every cell separately, so the head
+always had position.
+
+One thing the constant planes do **not** need is disambiguation. A `0` on the
+distance maps means either "outside the star" or "as far as it gets" — exactly
+one real field is at the latter — and a `0` on a class plane means "not this
+class". Plane 2 sits at the same cell in the same tensor, so the first
+convolution separates the cases in one linear combination. It costs nothing and
+is worth stating only because the encoding looks lossy written down.
+
+#### Jumps cannot change parity, and that is a whole feature
+
+The six jump deltas on this board are `(±2, 0)`, `(0, ±2)` and `(±2, ∓2)` —
+every one of them even in both coordinates. So **a jump, and therefore a jump
+chain of any length, can never leave the class `(x mod 2, y mod 2)` it started
+in.** Only a single step changes class, and a single step covers one field
+where a jump covers two. The 121 fields split into four such classes, of sizes
+37/28/28/28. Enumerated over `jumpNeighbours` for all 121 fields, not assumed.
+
+This is the sharper invariant than the parity of the *distance*: a delta of
+`(1, 1)` has hex distance 2, which an even-distance argument would call
+jump-reachable, and it is not.
+
+What follows from it is a quantity nothing else in the system expresses. The
+pieces not yet home have to fill the target fields not yet occupied; within a
+class that is free, but a class holding more stragglers than it has open target
+fields must send the surplus across a boundary, at a minimum of one single step
+each. Summed over the four classes, that surplus — `_parityMismatch` — is a
+**lower bound on the single steps still owed**, and remaining *distance* is
+completely blind to it: two positions with identical travel left can differ by
+several forced steps.
+
+It is zero at the opening, and that is not luck — the start and target zones
+have the same class distribution (6/3/3/3), so the opening is already perfectly
+matched and a jump-only solution is not ruled out. It is zero again once every
+piece is home. So it measures a detour the middle game can wander into and back
+out of, which is exactly the shape a shaping term should have. Measured over
+six random games it runs 0–4 with a mean of 2.2.
+
+Three things carry it into the network and the reward:
+
+- **Planes 9–12**, the class one-hot, so a convolution can read it off per
+  cell. One-hot rather than a compact code for a measured reason: all three
+  step deltas are odd in at least one coordinate, so **from any class a single
+  step reaches all three others** — the four classes form a complete graph,
+  every pair one step apart. There are no near and far classes, so any
+  encoding carrying a metric misstates the board. A plane holding 1..4 would
+  imply class 1 and 4 are far apart; a two-bit `(x mod 2, y mod 2)` code (what
+  this replaced) makes a weaker version of the same mistake, putting `(0,0)`
+  two bits from `(1,1)` and one from `(1,0)` where the board puts both at one
+  step. Four mutually equidistant indicators state what is true and nothing
+  else, for 1,152 parameters in the first convolution.
+
+  Painted over **all 289 cells**, not the 121 real fields: parity belongs to
+  the raster, `row % 2` is defined everywhere, and stopping at the star's edge
+  would break the checkerboard exactly where a 3×3 kernel straddles the
+  boundary. This is the one plane group where filling the void reads the
+  raster rather than inventing data — a distance map has nothing to say about
+  a cell no piece can occupy, which is why those stay 0 and lean on the mask.
+- **Plane 13**, the distance map restricted to targets of the field's own
+  class: "how far can this piece get without ever taking a single step". It
+  differs from plane 7 on 56 of the 121 fields — by one step on 50 of them and
+  by two on 6 — so it is a second map, not a rescaling of the first. This, not
+  the class planes, is what carries the *long-range* comparison: two 3×3
+  convolutions see 5×5, and a piece is usually nowhere near the target zone.
+- **The potential**, via `parityWeight` (`--parity`, default 0.25, 0 is the
+  control). See below — the form it takes is the part that needed care.
+
+The class *labels* differ between the raw frame (`parityClass`, which
+`_parityMismatch` and plane 13 use) and the canonical one (the planes). That is
+fine and is pinned by a test: a rotation permutes the labels **bijectively**, so
+the partition of the board into classes is identical either way, and nothing
+cross-references a label across the two. `_parityMismatch` sums over all four
+classes, which makes it invariant under the relabelling outright.
+
+**Four distinct zones, not two.** `Initializer` puts seat 1 on the bottom
+corner travelling to the top and seat 2 on the *left* corner travelling to the
+right, so the two seats do not face each other across the star: own start, own
+target, opponent start and opponent target are four different corners of the
+six, sharing only the single field where two of them touch.
+
+**The distance maps are not binary, deliberately.** A zone plane says where the
+goal is; `1 - d/max(d)` says which way is forwards from anywhere on the board,
+which is the same quantity `_progress` shapes the reward with. Cells outside
+the star stay 0, which the mask plane already distinguishes from a genuinely
+distant field.
+
+All eleven are painted once in `__init__` and copied into every observation. They
+go through the *same* `normalizer.permute` call the board state does, so they
+are indexed by canonical field id by construction rather than by an argument
+about which direction the permutation runs — and a test pins that the geometry
+comes out identical whichever seat builds it, which is the canonical frame's
+whole promise stated on the one part of the observation that could silently
+contradict the pieces.
+
+#### The trunk is shared, the branches are not
+
+`env/features.py` runs the convolutions once and gives the policy and the value
+their own path out of them, because the two want different things from the same
+board — "which piece, where" against "is this structure won":
+
+| | policy branch | value branch |
+|---|---|---|
+| out of the trunk | 1×1 squeeze to 8 channels | one more 3×3, then 1×1 to 16 |
+| spatial | full 17×17, flattened | full 17×17 flattened **plus** a global average over the trunk's 64 channels |
+| MLP behind it | `pi=[64, 64]` | `vf=[256, 256]` |
+
+`HalmaFeatures` returns the two branches concatenated and
+`env/policy.SplitMlpExtractor` cuts them apart again, because Stable-Baselines
+runs one extractor and hands its whole output to both networks. The alternative
+sb3 offers, `share_features_extractor=False`, builds two complete extractors and
+so pays for the convolutions twice; here the trunk runs once.
+
+What this changes, in parameters: the critic-only path went from **20,673 to
+1,371,217**, and the whole policy from 689,403 to 2,043,403. It is the direct
+answer to the capacity candidate raised under "Search on top of the critic
+makes the policy weaker" below — and only to that candidate. The other one, that
+PPO never asks the critic to rank siblings at all, is untouched by any amount of
+capacity, and the probe recorded there is still the measurement that says which
+was binding.
+
+Measured cost, `train.py`'s defaults over 6,000 steps on one machine: **245 →
+175 steps/s**, so a step buys about 71% of what it used to. `valueChannels` is
+the knob if that turns out not to pay for itself — the 16-channel squeeze is
+1.2M of the 1.37M.
+
+**This breaks every existing checkpoint.** `Talos1.0`, `Talos1.1` and
+`Talos1.2` carry a `(3, 17, 17)` observation space and the old undivided
+extractor, so they cannot be loaded, seated, or fine-tuned from by any current
+script — the same fate as `maskedPPO_300k`'s `Box(246,)` below. The next
+generation starts from a fresh `scripts/pretrain.py` clone. This was the
+deliberate deferral recorded under the deadlock discussion: the observation
+space was going to have to change eventually, and changing it once is cheaper
+than twice.
+
 `opponentStrategy` takes either one bot name or a sequence of them. A sequence
 is a pool: `reset()` draws one at random (from the seeded `np_random`, so the
 draw is reproducible) and that is who the agent faces for the whole episode.
@@ -410,6 +576,31 @@ divided by the 140 steps facing it at the opening and subtracted from 1. So it
 runs 0 at the opening to exactly 1 once every piece is home — and, with 15 pieces
 and 15 target fields, a remaining travel of zero *is* the win condition, so the
 top of the scale coincides with winning rather than approximating it.
+
+**The parity penalty rides on top of it, multiplicatively.** Travel is not the
+whole story — the forced single steps of `_parityMismatch` above are real and
+distance cannot see them — so the potential is
+`covered * (1 - parityWeight * mismatch / 15)`. The mismatch is 0 at both ends
+of the game, so the scale still runs exactly 0 to 1 and the penalty only bites
+in between.
+
+Multiplicative after the subtractive form failed twice, which is worth
+recording because both failures are the sort that would survive review:
+
+1. `covered - w*mismatch/15` goes **negative** early, when travel is still near
+   0 — measured, 5.7% of plies down to -0.024 at weight 0.25. A negative
+   potential is exactly the sign bug that taught three runs to stall.
+2. Clamping that at zero fixes the sign and breaks the *other* documented
+   property: two consecutive clamped plies both have `phi = 0`, so the shaping
+   between them is exactly 0 and the signal-on-every-step guarantee is gone.
+   The test suite caught this one; nothing about the position looks wrong.
+
+Multiplying has neither failure — both factors are in [0, 1] and both terms
+stay monotone, so advancing always helps, clearing parity debt always helps,
+and the potential can neither leave [0, 1] nor go flat while the agent is
+moving. What it means is that parity debt costs a *fraction of the ground
+already covered*: cheap while there is little to lose, expensive near the end,
+which is also when it is genuinely harder to fix.
 
 Two things it is deliberately not:
 
@@ -972,6 +1163,13 @@ trained in. Fixing it properly means a repetition signal in the observation,
 which would change the observation space and invalidate every existing
 checkpoint — deliberately deferred to the next generation.
 
+The observation space did change on 2026-08-07 (the geometry planes above), so
+that cost has now been paid and the repetition signal is free to follow. It was
+**not** included in that change: what belongs in a history encoding — how many
+previous plies, whose pieces, or a repetition count rather than raw positions —
+is an open question, and bundling an unsettled design into the change that
+broke compatibility would have made both harder to read afterwards.
+
 ### How the Talos checkpoints were actually built, and what is still on disk
 
 The results above were measured over some sixteen checkpoints, which are named
@@ -1084,6 +1282,15 @@ behind a bottleneck whose shape the policy determines. The 1×1 squeeze to 8
 channels before the flatten was a parameter-count decision that suits a policy
 ("which piece, where") better than a value ("is this structure won").
 
+**Addressed on 2026-08-07, and only this candidate.** The critic now has its
+own branch out of a shared trunk and a `vf=[256, 256]` MLP behind it, taking
+the critic-only path to 1,371,217 parameters — see "The trunk is shared, the
+branches are not" above. The numbers in the table were measured on `Talos1.2`,
+which the same change made unloadable, so they are the record of the old
+architecture rather than a control the new one can be compared against. The
+sibling-ranking probe below is still unbuilt and is still what would say
+whether capacity was the binding constraint or the objective was.
+
 **The measurement that should come before any redesign** is whether the critic
 ranks siblings at better than chance: take a position, take the policy's two
 best moves, play both out, and check whether the critic's ordering matches the
@@ -1106,13 +1313,91 @@ does.
 
 ### Next
 
-`scripts/progressivePhase3.py` is written and **not yet run**: four rounds of
-300k from `Talos1.2`, settings unchanged from phase 2, measured against the
-previous round rather than a fixed reference. The open question is whether to
-spend it, given that the league is what produced the `lookahead2` regression
-above — the script prints a sweep per round, and adding a `lookahead2` column
-per round would make the regression visible while it happens rather than
-afterwards.
+**The Talos lineage ends here.** The 2026-08-07 observation and critic changes
+above make `Talos1.0`/`1.1`/`1.2` unloadable, so `scripts/progressivePhase3.py`
+— written, never run, and branching from `Talos1.2` — has nothing to branch
+from any more. Every script still works; what is gone is the checkpoints they
+would have been pointed at.
+
+So the immediate path is a rebuild rather than a continuation:
+
+1. A fresh clone — **done, see below**.
+2. PPO from that clone, at the `--lr 1e-4 --targetKl 0.02` settings the sharp-
+   policy instability above established, to a first `Talos2.0`.
+3. The yardsticks, unchanged — `evaluateAgainstBots`, `openingSweep`,
+   `randomPositionSweep`. The bots are the only reference that survived the
+   break, which makes them the bridge between the two generations: `Talos1.x`'s
+   recorded numbers against them are still the thing to beat, even though the
+   checkpoints that produced them can no longer be played.
+
+Three open questions that the rebuild is the natural moment for, none settled:
+a **history/repetition signal** in the observation (see the deadlock discussion
+above — the compatibility cost is already paid, only the design is open), the
+**sibling-ranking probe** on the critic, which now has capacity and still has
+no evidence that capacity was what it lacked, and whether the **parity penalty
+earns its place** — `--parity 0` is the control, and nothing has yet run the
+pair. It is policy-invariant by construction, so it can only change how fast
+the agent learns, never what it converges to; the question is purely whether
+the extra signal is worth anything.
 
 After that, replace the pygame front-end with a browser-based one — a backend
 around the unchanged engine plus a canvas front-end.
+
+### Step 1 of the rebuild: the clone, and what 3.3× the data bought
+
+`models/clone_from_multi_500k`, 2026-08-09. Same recipe as the old generation's
+step 1 — `pretrain --expert advancedDistScore sparsityScore bottleneck
+--epochs 12` — run twice, at 150k and 500k samples, because the network is now
+2.05M parameters against the old 689k and the agreement curve was still rising
+at epoch 12.
+
+| | old gen, 150k | new gen, 150k | new gen, **500k** |
+|---|---|---|---|
+| agreement with the teachers | 68.7% | 66.6% | **72.5%** |
+| vs `advancedDistScore`, argmax | — | 84.0% | **88.0%** |
+| vs `sparsityScore`, argmax | — | 42.0% | **90.0%** |
+| vs `random`, argmax | — | 86.0% | **96.0%** |
+| vs `advancedDistScore`, sampled | — | 50.0% | 66.0% |
+| vs `sparsityScore`, sampled | — | 16.0% | 32.0% |
+
+50 games per cell. The three teachers scored 46% / 78% / 76% against
+`advancedDistScore` over the same 50 games, so the 500k clone at 88% is above
+all of them on that pairing — cloning cannot exceed its teacher at *imitation*,
+but a blend of three can beat any one of them at play.
+
+**The data mattered far more than the extra epochs would suggest.** At equal
+epochs the 500k run is 3.3× the gradient steps, so a per-epoch comparison
+flatters it; the endpoint is the honest read, and 66.6% → 72.5% on held-out
+*games* — the bot columns — is not a step-count artefact. `sparsityScore` is
+the striking one: 42% → 90% argmax. The 150k clone had a genuine blind spot
+there and more of the same data closed it.
+
+**The sampled columns are where this clone is still weak**, and `sparsityScore`
+at 32% is the number to watch through PPO. Sampled play is what
+`progressivePhase2` moved most on the old lineage, so there is precedent for
+it recovering; nothing here says it will.
+
+The agreement curve had not flattened at epoch 12 (last step +0.6 points, from
++10.3 between epochs 1 and 2), so the run ended because the epochs ran out, not
+because it converged. Whether more would help is untested and cheap to test.
+
+Two things about `scripts/pretrain.py` changed to make 500k possible at all,
+both recorded because the second is load-bearing:
+
+- **`collect()` stores the dynamic half only.** A full observation is 14 planes
+  of float32 and eleven of them are constant, so keeping them per sample stores
+  the same block half a million times; the action mask is 14,641 entries of
+  which ~65 are legal. Together that is 15.4 GB at 500k, on a 17 GB machine.
+  Storing the two piece planes as `uint8` and `packbits`-ing the mask brings it
+  to 1.2 GB, and `fit()` reassembles each batch. Measured: no cost in time — an
+  epoch is 418s at 500k against the ~125s that 150k implies, which is linear.
+- **The premise is that planes 2 and up never move.** If that ever stops being
+  true, the fit would silently train on stale geometry and the loss would still
+  fall. `tests/test_pretrain.py` pins both halves: the reconstruction equals the
+  environment's own observation bit for bit, and the constant planes really are
+  constant across a played game.
+
+`--saveEvery N` was added at the same time. `main()` saves once, after the last
+epoch *and* after 300 evaluation games, which for an 80-minute fit is a long
+way to fall.
+

@@ -39,6 +39,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from gymnasium import spaces
 from sb3_contrib import MaskablePPO
 
 from env.features import HalmaFeatures
@@ -49,6 +50,28 @@ from scripts.train import evaluate, report
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
 
+# The observation planes that actually change during a game: own pieces and
+# opponent pieces. Everything from index 2 on is constant -- see staticBlock.
+DYNAMIC_PLANES = 2
+
+
+def staticBlock(env: HalmaEnv) -> np.ndarray:
+    """The planes of the observation that never change, as one (12, 17, 17) block.
+
+    Index 2 onwards of the board: the field mask and the eleven geometry
+    planes. ``collect`` stores only the two piece planes and ``fit`` glues this
+    back on, so the constant part is held once instead of once per sample.
+    """
+    return np.concatenate([env.boardMask[None], env.geometryPlanes]).astype(np.float32)
+
+
+def rebuildBoards(dynamic: np.ndarray, static: np.ndarray) -> np.ndarray:
+    """Put a batch of stored piece planes back into full observation boards."""
+    boards = np.empty((len(dynamic), DYNAMIC_PLANES + len(static), 17, 17), dtype=np.float32)
+    boards[:, :DYNAMIC_PLANES] = dynamic
+    boards[:, DYNAMIC_PLANES:] = static
+    return boards
+
 
 def collect(
     expert: str | Sequence[str],
@@ -57,8 +80,22 @@ def collect(
     seed: int,
     model: MaskablePPO | None = None,
     mix: float = 0.0,
-) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
-    """Play games and record (observation, mask, the move the expert chose).
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Play games and record (piece planes, scalars, packed mask, expert move).
+
+    **Stored compactly, because the plain form does not fit.** A full
+    observation is 14 planes of float32, but eleven of them are constant --
+    the field mask and the geometry -- so keeping them per sample stores the
+    same block half a million times. The action mask is worse: 14,641 entries
+    of which some 65 are legal. At 500k samples the two together come to
+    15.4 GB, which does not fit in memory; storing the two piece planes as
+    uint8 and packing the mask to bits brings that to 1.2 GB.
+
+    So this returns the *dynamic* half and ``fit`` reassembles each batch with
+    :func:`rebuildBoards` and ``np.unpackbits``. A test pins that what comes
+    back out is bit-for-bit the observation the environment produced -- a
+    reconstruction that quietly disagreed would train the policy on something
+    other than what it will be asked to play.
 
     ``mix`` is the probability that the *learner* picks the move actually
     played, while the expert still supplies the label -- DAgger's β. At 0 the
@@ -73,7 +110,7 @@ def collect(
     """
     experts = (expert,) if isinstance(expert, str) else tuple(expert)
     strategies = {name: makeStrategy(name) for name in set(experts)}
-    boards, scalars, masks, actions = [], [], [], []
+    dynamic, scalars, masks, actions = [], [], [], []
     rng = np.random.default_rng(seed)
     games = 0
     while len(actions) < samples:
@@ -90,9 +127,13 @@ def collect(
             expertAction = env.encodeAction(normalized)
 
             mask = env.action_masks()
-            boards.append(obs["board"])
+            # Only the two piece planes are stored: everything from index 2 on
+            # is constant, and packbits turns the 14,641-entry mask into 1,831
+            # bytes. See the docstring -- at 500k samples the plain form is
+            # 15.4 GB and this is 1.2 GB.
+            dynamic.append(obs["board"][:DYNAMIC_PLANES].astype(np.uint8))
             scalars.append(obs["scalars"])
-            masks.append(mask)
+            masks.append(np.packbits(mask))
             actions.append(expertAction)
 
             played = expertAction
@@ -108,23 +149,25 @@ def collect(
                 break
     print(f"  {len(actions):,} positions from {games} games")
     return (
-        {
-            "board": np.array(boards, dtype=np.float32),
-            "scalars": np.array(scalars, dtype=np.float32),
-        },
-        np.array(masks),
+        np.array(dynamic, dtype=np.uint8),
+        np.array(scalars, dtype=np.float32),
+        np.array(masks, dtype=np.uint8),
         np.array(actions, dtype=np.int64),
     )
 
 
 def fit(
     model: MaskablePPO,
-    observations: dict[str, np.ndarray],
+    dynamic: np.ndarray,
+    scalars: np.ndarray,
     masks: np.ndarray,
     actions: np.ndarray,
+    static: np.ndarray,
     epochs: int,
     batch: int,
     learningRate: float,
+    saveEvery: int = 0,
+    checkpointName: str = "",
 ) -> None:
     """Maximise the log-probability the policy assigns to the expert's move.
 
@@ -132,12 +175,26 @@ def fit(
     distribution PPO will later sample from -- so the illegal actions carry no
     probability to begin with and the loss only ever ranks legal moves against
     each other.
+
+    ``saveEvery`` writes a checkpoint every that many epochs, which ``main``
+    otherwise does exactly once -- after the last epoch *and* after the closing
+    evaluation. That single save is a long way to fall: a 500k run is some 80
+    minutes of fitting, and anything that stops it before the end leaves
+    nothing on disk at all. The counterpart on the PPO side is
+    ``scripts/train.py --saveCheckpointsEvery``.
+
+    The final epoch is checkpointed too rather than skipped as redundant. It is
+    not redundant: ``main`` saves only after 300 evaluation games have run, so
+    a failure in between would discard a finished fit.
     """
     policy = model.policy
     policy.set_training_mode(True)
     optimizer = torch.optim.Adam(policy.parameters(), lr=learningRate)
     device = policy.device
     count = len(actions)
+    actionSpace = model.action_space
+    assert isinstance(actionSpace, spaces.Discrete)
+    actionCount = int(actionSpace.n)
     actionTensor = torch.as_tensor(actions, device=device)
 
     for epoch in range(epochs):
@@ -145,11 +202,13 @@ def fit(
         totalLoss, correct = 0.0, 0
         for start in range(0, count, batch):
             index = order[start : start + batch]
+            # Rebuilt here rather than held in memory -- see collect().
             batchObs = {
-                key: torch.as_tensor(value[index], device=device)
-                for key, value in observations.items()
+                "board": torch.as_tensor(rebuildBoards(dynamic[index], static), device=device),
+                "scalars": torch.as_tensor(scalars[index], device=device),
             }
-            distribution = policy.get_distribution(batchObs, action_masks=masks[index])
+            batchMasks = np.unpackbits(masks[index], axis=1, count=actionCount).astype(bool)
+            distribution = policy.get_distribution(batchObs, action_masks=batchMasks)
             expected = actionTensor[index]
             loss = -distribution.log_prob(expected).mean()
             optimizer.zero_grad()
@@ -166,6 +225,15 @@ def fit(
             f"  agrees with the bot {correct / count * 100:5.1f} %",
             flush=True,
         )
+        if saveEvery and (epoch + 1) % saveEvery == 0:
+            # .zip spelled out: sb3 only appends it when Path.suffix is empty,
+            # and a name carrying a version number already looks suffixed to
+            # pathlib -- the same trap scripts/train.py documents.
+            path = MODELS / f"{checkpointName}_epoch{epoch + 1:02d}.zip"
+            model.save(path)
+            print(f"    saved {path.name}", flush=True)
+            # save() flips the policy out of training mode.
+            policy.set_training_mode(True)
     policy.set_training_mode(False)
 
 
@@ -189,6 +257,14 @@ def main() -> None:
         "--mix", type=float, default=0.5, help="learner's share of moves after round 1"
     )
     parser.add_argument("--name", default="cloned")
+    # Guards against losing a long fit: main() saves once, at the very end and
+    # only after the closing evaluation. See fit().
+    parser.add_argument(
+        "--saveEvery",
+        type=int,
+        default=0,
+        help="save a checkpoint every N epochs (0 = only the final model)",
+    )
     args = parser.parse_args()
 
     print(f"cloning {' + '.join(args.expert)} against {args.opponent}\n")
@@ -204,12 +280,19 @@ def main() -> None:
         policy_kwargs={"features_extractor_class": HalmaFeatures},
     )
 
+    # Built once from a throwaway env: the constant planes are the same for
+    # every position, which is the whole reason collect() does not store them.
+    static = staticBlock(HalmaEnv())
+    # Up front rather than beside the final save, because --saveEvery writes
+    # into this directory long before then.
+    MODELS.mkdir(exist_ok=True)
+
     for round in range(args.rounds):
         mix = 0.0 if round == 0 else args.mix
         label = "cloning" if round == 0 else f"DAgger round {round + 1}, learner drives {mix:.0%}"
         print(f"\n{label}: collecting", flush=True)
         started = time.perf_counter()
-        observations, masks, actions = collect(
+        dynamic, scalars, masks, actions = collect(
             args.expert,
             args.opponent,
             args.samples,
@@ -218,14 +301,27 @@ def main() -> None:
             mix=mix,
         )
         print(f"  collected in {time.perf_counter() - started:.0f}s\nfitting:", flush=True)
-        fit(model, observations, masks, actions, args.epochs, args.batch, args.lr)
+        fit(
+            model,
+            dynamic,
+            scalars,
+            masks,
+            actions,
+            static,
+            args.epochs,
+            args.batch,
+            args.lr,
+            saveEvery=args.saveEvery,
+            # DAgger refits the same model each round, so the round has to be
+            # in the name or round 2 would overwrite round 1's checkpoints.
+            checkpointName=args.name if args.rounds == 1 else f"{args.name}_r{round + 1}",
+        )
 
         print("\nafter fitting:")
         for opponent in dict.fromkeys([args.opponent, "sparsityScore", "random"]):
             report(f"vs {opponent}", evaluate(model, opponent, args.games))
             report("   sampled", evaluate(model, opponent, args.games, deterministic=False))
 
-    MODELS.mkdir(exist_ok=True)
     # Explicit .zip: sb3 only appends it when Path.suffix is empty, and a name
     # carrying a version number ("Talos1.0") already looks suffixed to pathlib.
     path = MODELS / f"{args.name}.zip"
