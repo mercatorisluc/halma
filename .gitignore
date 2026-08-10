@@ -16,6 +16,11 @@ env/.venv/
 # would leave showing up as untracked.
 models/**/*.zip
 
+# Run logs. A training round or a sweep is normally started detached with its
+# output redirected here, so these accumulate; what they said belongs in
+# ARCHITECTURE.md, not in the history.
+*.log
+
 # OS
 .DS_Store
 

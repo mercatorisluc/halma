@@ -1401,3 +1401,100 @@ both recorded because the second is load-bearing:
 epoch *and* after 300 evaluation games, which for an 80-minute fit is a long
 way to fall.
 
+### Stage 3, the generation-2 league: five rounds, +70.5% over its own anchor
+
+`scripts/talos2League.py`, five 300k rounds of checkpoint-only self-play from
+`models/talos2_stage6`, finished 2026-08-10. Round 1 ran on 2026-08-09; rounds
+2-5 were resumed the next day with the `--startRound` flag added for the
+purpose, which rebuilds the opponent pool from the `Talos2.0_roundN` files on
+disk so a resumed round sees the pool an uninterrupted run would have given it.
+
+`scripts/openingSweep.py`, 800 openings per pairing:
+
+| round | vs anchor `talos2_stage6` | vs the previous round |
+|---|---|---|
+| 1 | 58.5 | — |
+| 2 | 62.9 | 54.8 |
+| 3 | 65.1 | 52.2 |
+| 4 | 67.0 | 55.4 |
+| 5 | **70.5** | **56.6** |
+
+The league did not plateau. The gain against the *anchor* decelerates (+4.4,
++2.2, +1.9, +3.5) but that curve flatters itself, because every round inherits
+its predecessor's lead over a checkpoint that stopped improving five rounds
+ago. The honest column is the head-to-head, and it is flat-to-rising: round 3
+was a weak round (52.2%), not the onset of a plateau. Round 5 also beats round
+1 66.5%, so the four rounds resumed here bought about as much as round 1 did
+over the anchor.
+
+`scripts/randomPositionSweep.py` agrees off the beaten track: round 5 over the
+anchor **64.5% ± 4.2** (400 games from 200 mirrored positions, seed 0), 65.6%
+at 4-12 random plies and 63.2% at 13-20, so the advantage is not an opening
+book.
+
+**Every number above is Talos-against-Talos**, and the three training bots have
+been saturated at 98-100% argmax since the anchor — the inline reports across
+all five rounds are 100% almost everywhere, with a single 95% against `random`
+in rounds 4 and 5. So the league on its own could not distinguish "stronger"
+from "better at beating its own siblings", and the generation-1 precedent is
+exact: `Talos1.2` came out of 1.5M steps of league play beating its own league
+members while its `lookahead2` score fell from `Talos1.0`'s 68.3% to 41.7%.
+
+### The league is real: +13.5 on `lookahead2`, measured at 200 games
+
+`scripts/evaluateAgainstBots.py`, 200 games per mode (400 per checkpoint),
+seed 10000, 2026-08-10. `lookahead2` is the only bot that still moves and the
+only instrument that bridges the two generations:
+
+| checkpoint | argmax | sampled | argmax home% |
+|---|---|---|---|
+| `Talos1.0` (60 games) | 68.3 ± 11.8 | 33.3 ± 11.9 | 93.3 |
+| `Talos1.1` (60 games) | 75.0 ± 11.0 | 13.3 ± 8.6 | 91.4 |
+| `Talos1.2` (60 games) | 41.7 ± 12.5 | 33.3 ± 11.9 | 80.2 |
+| `talos2_stage6`, the anchor | 58.5 ± 6.8 | 44.0 ± 6.9 | 93.4 |
+| **`Talos2.0_round5`** | **72.0 ± 6.2** | **58.0 ± 6.8** | 94.6 |
+
+Three readings, in decreasing order of confidence.
+
+**The league bought real strength, not just sibling wins.** Round 5 beats its
+own anchor by 13.5 points argmax and 14.0 sampled, and the intervals barely
+touch (65.8-78.2 against 51.7-65.3) — where `Talos1.2` had *lost* 26 points
+across the equivalent stage. The 1.5M steps went somewhere.
+
+**Sampled play is the clear cross-generation win.** 58.0 ± 6.8 against
+generation 1's best of 33.3 ± 11.9 — nowhere near overlapping. The policy's
+whole distribution now beats the strongest bot more often than not, where
+generation 1's distribution lost two games in three. The observation rebuild is
+the likeliest cause, since it is what changed about what the network sees.
+
+**Argmax is level with generation 1, not ahead of it.** 72.0 ± 6.2 spans
+65.8-78.2; `Talos1.0` spans 56.5-80.1 and `Talos1.1` 64.0-86.0. Both overlap
+heavily, so generation 2 has *matched* the old lineage's best argmax play, not
+beaten it — and the honest statement is that the 60-game generation-1 numbers
+are too coarse to separate from it either way. Re-measuring them is impossible;
+the checkpoints no longer load.
+
+Also worth recording: the anchor's own 200-game figure of 58.5% is comfortably
+inside the 53.3 ± 12.6 measured over 60 games, so the old number was not wrong,
+only too coarse to build on — which is exactly why 60 games could not answer
+whether generation 2 had fallen behind `Talos1.0`.
+
+Training health, against the instability that once collapsed argmax strength
+from 97% to 46%: rounds 2-5 ran `approx_kl` at 0.012-0.021 with occasional
+overshoots to 0.025-0.037 that `--targetKl 0.02` aborted, plus one 0.090 spike
+on the first update of round 5 that the abort caught at step 1 and that
+recovered immediately. Round 1's flat 0.0198-0.0199 — pinned against the limit
+— did not recur, so that warning sign was specific to round 1.
+
+Two design notes for anyone extending the league:
+
+- **The opponent pool is drawn uniformly** (`env/halmaEnv.py`, `reset()`), so
+  round 5 spent only 1/5 of its episodes against round 4, its strongest
+  sparring partner, and the rest re-beating history. A sixth round would make
+  that 1/6. If the league is extended, cap the pool at the anchor plus the last
+  three rounds rather than letting it grow — the anchor earns a permanent slot
+  as a fixed reference, the old middle rounds do not.
+- **Draws appear as the lineage converges**: 0 in every round-1 and round-2
+  sweep, then 2 (round 4 vs 3), 12 (round 5 vs 4). Siblings are starting to
+  play each other into repetition, which is the same deadlock the observation
+  still has no history signal for.

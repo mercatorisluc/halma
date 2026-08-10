@@ -30,12 +30,26 @@ class HumanInputHandler:
                 return move
         return None
 
+    def atLiveFront(self):
+        """Whether the board shows the current position rather than history.
+
+        The arrow keys rewind the board through recorded moves. While that
+        cursor is behind the front, the position on screen is a past one: the
+        human's legal moves are not the ones being drawn, and a move played
+        into it would be appended to a history it does not follow from.
+        """
+        return self.playback.moveTraveler == len(self.playback.game.moves)
+
     def adaptToHumanInteraction(self, game):
         player = game.currentPlayer()
-        self.waitingForHumanMove = player.isHuman()
+        self.waitingForHumanMove = player.isHuman() and self.atLiveFront()
         if self.waitingForHumanMove:
-            if self.validHumanMoves is None:
-                self.validHumanMoves = game.board.allValidMovesWithWay(player)
+            # Recomputed every frame rather than cached for the turn. The board
+            # is mutated underneath this by the playback cursor, and a cached
+            # jump path that the board no longer supports made
+            # Move.reconstructFullMove fail its assertion while merely *drawing*
+            # the move -- the game died on a keypress plus a click.
+            self.validHumanMoves = game.board.allValidMovesWithWay(player)
         else:
             self.validHumanMoves = None
 

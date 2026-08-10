@@ -326,6 +326,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Both names are joined onto MODELS below, so a name carrying a separator
+    # writes models/models/foo.zip and the run looks like it vanished. Caught
+    # here rather than at the save, which is 300k steps too late.
+    for flag, value in (("--name", args.name), ("--checkpointBasename", args.checkpointBasename)):
+        if "/" in value or "\\" in value:
+            parser.error(
+                f"{flag} is a bare name, not a path: got {value!r}, use {Path(value).name!r}"
+            )
+
     # Training opponents: a pool if given, else --opponent alone -- the
     # existing fixed-opponent behaviour. Progress reports and the final
     # results still track --opponent specifically, whether or not it is in

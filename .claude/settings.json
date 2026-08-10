@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore *)",
+      "Bash(git checkout *)",
+      "Bash(PYTHONPATH=. .venv/bin/python /private/tmp/claude-501/-Users-lucmercatoris-Desktop-halma-project/bb0eef1e-c4d6-42a8-bed3-ba751849f75f/scratchpad/profBots.py)",
+      "Bash(PYTHONPATH=. .venv/bin/python /private/tmp/claude-501/-Users-lucmercatoris-Desktop-halma-project/bb0eef1e-c4d6-42a8-bed3-ba751849f75f/scratchpad/profEnv.py)",
+      "Bash(PYTHONPATH=. .venv/bin/python /private/tmp/claude-501/-Users-lucmercatoris-Desktop-halma-project/bb0eef1e-c4d6-42a8-bed3-ba751849f75f/scratchpad/engineWins.py)",
+      "Bash(PYTHONPATH=. .venv/bin/python -c ' *)",
+      "Edit(/.claude/skills/run-halma/**)",
+      "Bash(git -C /Users/lucmercatoris/Desktop/halma_project status --short)",
+      "Bash(git -C /Users/lucmercatoris/Desktop/halma_project diff --stat)",
+      "Bash(chmod +x /Users/lucmercatoris/Desktop/halma_project/scripts/runPhase1Trials.sh)",
+      "Bash(git log *)",
+      "Bash(/Users/lucmercatoris/Desktop/halma_project/.venv/bin/python -)",
+      "Bash(pkill -f \"scripts.train --steps 300000\")"
+    ]
+  }
+}
