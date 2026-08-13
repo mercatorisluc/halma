@@ -26,31 +26,35 @@ class HalmaPlayer:
         self.endPositions: set[FieldId] = set()
         self.openEndPositions: set[FieldId] = set()
         self.nonArrived: set[FieldId] = set()
-        self.homeBase: FieldId | None = None
+        # The far tip of this player's target triangle -- the field its pieces
+        # are furthest from at the start. The distance scorers measure progress
+        # against it; see HalmaBoard.tipDistanceScore for why one field
+        # rather than the zone.
+        self.targetTip: FieldId | None = None
+        # Field id -> steps to the nearest target field, free or not. Constant
+        # for the game; stragglerTravelScore uses it as a lower bound.
+        self.targetDistance: list[int] = []
         self.distanceScore = 0
         # Replaced with the game's generator when seated, so one seed
         # reproduces a whole game.
         self.rng = random.Random()
-        # Filled in by HalmaGame.initPlayers. Only searching strategies need it.
+        # Filled in by HalmaGame.seatPlayers. Only searching strategies need it.
         self.opponents: list[HalmaPlayer] = []
 
-    def setHomeBase(self, position: FieldId) -> None:
-        self.homeBase = position
+    def setTargetTip(self, position: FieldId) -> None:
+        self.targetTip = position
 
     def prepareForGameStart(self, board: HalmaBoard) -> None:
         for id in self.startPositions:
             board.fields[id].playerID = self.identifier
-        # Reset, not update: every existing caller constructs a fresh player
-        # per game, so positions was always empty here and this bug was
-        # invisible. A reused player object (e.g. a NeuralComputer kept alive
-        # across many games to avoid reloading its checkpoint) would
-        # otherwise union in wherever its pieces ended the previous game,
-        # leaving move generation reading phantom pieces the board itself
-        # never placed.
+        # Reset, not update: a reused player object (e.g. a NeuralComputer kept
+        # alive across many games to avoid reloading its checkpoint) would
+        # otherwise union in wherever its pieces ended the previous game.
         self.positions = set(self.startPositions)
         self.nonArrived = self.positions - self.endPositions
         self.openEndPositions = self.endPositions - self.positions
-        self.distanceScore = board.calculatePlayerDistanceScore(self)
+        self.targetDistance = board.targetDistances(self)
+        self.distanceScore = board.calculateOpenTargetDistance(self)
 
     def updatePositionWithMove(self, move: AnyMove) -> None:
         start, end = move[0], move[-1]

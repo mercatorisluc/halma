@@ -56,7 +56,7 @@ def test_collect_round_trips_through_the_packed_mask():
     byte boundary, so the count argument is load-bearing and an off-by-one
     would hand the policy a mask shifted against the action space."""
     env = HalmaEnv()
-    dynamic, scalars, masks, actions = collect("bottleneck", "advancedDistScore", 40, seed=0)
+    dynamic, scalars, masks, actions = collect("straggler", "distance", 40, seed=0)
 
     assert len(dynamic) == len(scalars) == len(masks) == len(actions) == 40
     assert dynamic.dtype == np.uint8

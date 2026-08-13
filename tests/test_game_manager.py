@@ -33,7 +33,7 @@ def test_computed_game_seats_two_bots_with_their_strategies():
     assert [type(p) for p in bots] == [Computer, Computer]
     assert all(isinstance(p, Computer) for p in bots)
     strategyNames = [p.strategy.strategyName for p in bots if isinstance(p, Computer)]
-    assert strategyNames == ["advancedDistScore", "sparsityScore"]
+    assert strategyNames == ["distance", "shaped"]
     assert all(not p.isHuman() for p in bots)
 
 
@@ -60,8 +60,8 @@ def test_interactive_game_is_a_human_game():
 
 def _assert_three_players_are_seated_without_overlap(game):
     assert len(game.players) == 3
-    homeBases = [p.homeBase for p in game.players]
-    assert len(set(homeBases)) == 3
+    targetTips = [p.targetTip for p in game.players]
+    assert len(set(targetTips)) == 3
     allPositions = set()
     for player in game.players:
         assert len(player.positions) == 15

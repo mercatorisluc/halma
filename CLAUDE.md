@@ -52,18 +52,18 @@ python -m scripts.train --steps 300000 --games 200 --init models/cloned
 # Fine-tune against a pool of bots instead of one, so the agent does not
 # just specialise to --opponent
 python -m scripts.train --steps 300000 --init models/cloned \
-    --opponentPool advancedDistScore sparsityScore bottleneck
+    --opponentPool distance shaped straggler
 
 # The three stages that build a .0 model, in order -- see ARCHITECTURE.md for
 # what each one measured. Stage 2 is two runs: the clone is fine-tuned against
 # heuristics alone, then against heuristics and checkpoints mixed.
 python -m scripts.pretrain --samples 500000 --epochs 12 \
-    --expert advancedDistScore sparsityScore bottleneck --name clone
+    --expert distance shaped straggler --name clone
 python -m scripts.train --steps 300000 --games 200 --init models/clone \
-    --opponentPool advancedDistScore sparsityScore bottleneck \
+    --opponentPool distance shaped straggler \
     --lr 1e-4 --targetKl 0.02 --name stage2a
 python -m scripts.train --steps 500000 --games 200 --init models/stage2a \
-    --opponentPool advancedDistScore simpleDistScore sparsityScore bottleneck random \
+    --opponentPool distance tipDistance shaped straggler random \
     --opponentModelPool models/clone --lr 1e-4 --targetKl 0.02 --name stage2b
 python -m scripts.talos2League   # stage 3; edit INIT to point at stage2b
 

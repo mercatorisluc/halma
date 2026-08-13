@@ -39,14 +39,14 @@ def test_env_passes_the_gymnasium_checker():
 
 
 def test_a_single_opponent_strategy_never_changes_across_resets():
-    env = HalmaEnv(opponentStrategy="bottleneck")
+    env = HalmaEnv(opponentStrategy="straggler")
     for seed in range(10):
         env.reset(seed=seed)
-        assert env.opponentStrategy == "bottleneck"
+        assert env.opponentStrategy == "straggler"
 
 
 def test_an_opponent_pool_is_drawn_from_on_every_reset():
-    pool = ["advancedDistScore", "sparsityScore", "bottleneck"]
+    pool = ["distance", "shaped", "straggler"]
     env = HalmaEnv(opponentStrategy=pool)
     seen = set()
     for seed in range(20):
@@ -59,7 +59,7 @@ def test_an_opponent_pool_is_drawn_from_on_every_reset():
 
 
 def test_the_opponent_draw_is_reproducible_from_a_seed():
-    pool = ["advancedDistScore", "sparsityScore", "bottleneck"]
+    pool = ["distance", "shaped", "straggler"]
     first = HalmaEnv(opponentStrategy=pool)
     second = HalmaEnv(opponentStrategy=pool)
     for seed in range(10):
@@ -72,7 +72,7 @@ def test_opponent_sampling_needs_a_checkpoint_to_sample():
     # A heuristic has no distribution, so this combination would quietly do
     # nothing -- and a run configured that way would look varied and not be.
     with pytest.raises(ValueError, match="opponentSampling needs"):
-        HalmaEnv(opponentStrategy="bottleneck", opponentSampling=0.5)
+        HalmaEnv(opponentStrategy="straggler", opponentSampling=0.5)
 
 
 @pytest.mark.parametrize("fraction", [-0.1, 1.5])
@@ -241,7 +241,7 @@ def test_potential_measures_own_progress_only():
     opponent.openEndPositions = set()
     # distanceScore is maintained incrementally, so moving pieces by hand
     # leaves it stale. Recompute it, the way prepareForGameStart does.
-    opponent.distanceScore = env.board.calculatePlayerDistanceScore(opponent)
+    opponent.distanceScore = env.board.calculateOpenTargetDistance(opponent)
 
     assert env._potential() == pytest.approx(opening), "the opponent must not move it"
 
@@ -279,7 +279,7 @@ def test_potential_rises_as_the_agent_advances():
     agent.positions = set(agent.endPositions)
     agent.nonArrived = set()
     agent.openEndPositions = set()
-    agent.distanceScore = env.board.calculatePlayerDistanceScore(agent)
+    agent.distanceScore = env.board.calculateOpenTargetDistance(agent)
 
     assert env._potential() > before
     # Exactly 1, not merely more: the potential measures travel still to be
@@ -578,7 +578,7 @@ def test_the_parity_mismatch_is_zero_at_both_ends_of_the_game():
     agent.positions = set(agent.endPositions)
     agent.nonArrived = set()
     agent.openEndPositions = set()
-    agent.distanceScore = env.board.calculatePlayerDistanceScore(agent)
+    agent.distanceScore = env.board.calculateOpenTargetDistance(agent)
 
     assert env._parityMismatch(agent) == 0
     assert env._potential() == pytest.approx(1.0)

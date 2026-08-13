@@ -372,10 +372,10 @@ def policyMode(argv: list[str]) -> int:
     game = ComputedGame()
     game.seed(5)
     agent = NeuralComputer(1, model)
-    game.initGame([agent, Computer(2, "advancedDistScore")])
+    game.initGame([agent, Computer(2, "distance")])
     agent.attachTo(game)
     winner = game.play()
-    print(f"{model} vs advancedDistScore: winner={winner} in {len(game.moves)} moves", flush=True)
+    print(f"{model} vs distance: winner={winner} in {len(game.moves)} moves", flush=True)
     return 0
 
 

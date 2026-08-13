@@ -36,7 +36,7 @@ SEED = 42
 LEARNING_RATE = 1e-4
 # The load-bearing setting, not an optional guard. Without it, round 2 of the
 # 2026-08-04 run drove approx_kl to 0.064 and collapsed argmax strength against
-# advancedDistScore from 97% to 46% -- losing 14% of games even to random.
+# distance from 97% to 46% -- losing 14% of games even to random.
 # Rerunning that same round with targetKl 0.02 and nothing else changed
 # restored it to 100%. Measured at both entropy 0.03 and 0.01, so this is the
 # fix; entropy was a symptom (it stops running away once updates are capped).

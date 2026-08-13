@@ -6,7 +6,7 @@
 PPO starts from noise, and from noise this game gives it nothing to learn from:
 a random agent wins none of 700 games, and 300k steps of shaped training still
 end at 0 wins and a few percent of pieces home. The bots, meanwhile, already
-play it -- ``bottleneck`` beats ``advancedDistScore`` 84% of the time and costs
+play it -- ``straggler`` beats ``distance`` 84% of the time and costs
 0.3ms a move. Copying one is a far cheaper way into the right region of policy
 space than discovering it.
 
@@ -240,9 +240,9 @@ def fit(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--expert", nargs="+", default=["bottleneck"], help="bot(s) to copy, one drawn per game"
+        "--expert", nargs="+", default=["straggler"], help="bot(s) to copy, one drawn per game"
     )
-    parser.add_argument("--opponent", default="advancedDistScore")
+    parser.add_argument("--opponent", default="distance")
     parser.add_argument("--samples", type=int, default=100_000, help="positions to record")
     parser.add_argument("--epochs", type=int, default=8)
     parser.add_argument("--batch", type=int, default=256)
@@ -318,7 +318,7 @@ def main() -> None:
         )
 
         print("\nafter fitting:")
-        for opponent in dict.fromkeys([args.opponent, "sparsityScore", "random"]):
+        for opponent in dict.fromkeys([args.opponent, "shaped", "random"]):
             report(f"vs {opponent}", evaluate(model, opponent, args.games))
             report("   sampled", evaluate(model, opponent, args.games, deterministic=False))
 

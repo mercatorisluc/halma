@@ -108,14 +108,14 @@ need the front-end. Each mode is a few seconds:
 
 ```bash
 .venv/bin/python .claude/skills/run-halma/driver.py engine 1
-# → winner=2 after 132 moves          (ComputedGame, advancedDistScore vs sparsityScore)
+# → winner=2 after 132 moves          (ComputedGame, distance vs shaped)
 
 .venv/bin/python .claude/skills/run-halma/driver.py env 40
 # → obs keys=['board', 'scalars'] shapes={'board': (3, 17, 17), 'scalars': (4,)}
 # → 40 steps ok, return=0.100, last info keys=['action_mask', 'illegalAction', 'outcome']
 
 .venv/bin/python .claude/skills/run-halma/driver.py policy models/Talos1.1
-# → models/Talos1.1 vs advancedDistScore: winner=1 in 98 moves
+# → models/Talos1.1 vs distance: winner=1 in 98 moves
 ```
 
 Fast smoke runs of the training scripts, when you have changed them:

@@ -41,14 +41,42 @@ class Initializer:
         self.initEdges(board)
         board.calculateDistanceMatrix()
 
+    def initializePlayers(self, players: list[HalmaPlayer], board: HalmaBoard) -> None:
+        """Hand each player its corner and place its pieces on the board.
+
+        Home corners go by list position, not by a player's own identifier --
+        ``players[0]`` always gets ``player1Positions`` -- so the caller decides
+        who sits where by the order it passes in. Everything a player needs that
+        is not part of the layout (its generator, its opponents) is the game's
+        business and is set there.
+        """
+        if len(players) > 0:
+            self.setPlayerPositions(players[0], self.player1Positions(board))
+        if len(players) > 1:
+            self.setPlayerPositions(players[1], self.player2Positions(board))
+        if len(players) > 2:
+            self.setPlayerPositions(players[2], self.player3Positions(board))
+        for player in players:
+            player.prepareForGameStart(board)
+
+    def setPlayerPositions(
+        self, player: HalmaPlayer, positionsTriplet: tuple[list[FieldId], list[FieldId], FieldId]
+    ) -> None:
+        startPositions, endPositions, targetTip = positionsTriplet
+        player.setStartPositions(startPositions)
+        player.setEndPositions(endPositions)
+        player.setTargetTip(targetTip)
+
     def player1Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
         for i in range(5):
             for j in range(i + 1):
                 startPositions.append(board.idFromCoord((i, -4 - j)))
                 endPositions.append(board.idFromCoord((-i, 4 + j)))
-        homeBase = board.idFromCoord((-4, 8))
-        return (startPositions, endPositions, homeBase)
+        # The far corner of the end triangle, 12-16 steps from the start cells
+        # against the 0-4 of the end cells it sits in.
+        targetTip = board.idFromCoord((-4, 8))
+        return (startPositions, endPositions, targetTip)
 
     def player2Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
@@ -56,8 +84,8 @@ class Initializer:
             for j in range(i + 1):
                 startPositions.append(board.idFromCoord((-4 - j, i)))
                 endPositions.append(board.idFromCoord((4 + j, -i)))
-        homeBase = board.idFromCoord((8, -4))
-        return (startPositions, endPositions, homeBase)
+        targetTip = board.idFromCoord((8, -4))
+        return (startPositions, endPositions, targetTip)
 
     def player3Positions(self, board: HalmaBoard) -> tuple[list[FieldId], list[FieldId], FieldId]:
         startPositions, endPositions = [], []
@@ -65,8 +93,8 @@ class Initializer:
             for j in range(i + 1):
                 startPositions.append(board.idFromCoord((4 - j, i)))
                 endPositions.append(board.idFromCoord((j - 4, -i)))
-        homeBase = board.idFromCoord((-4, -4))
-        return (startPositions, endPositions, homeBase)
+        targetTip = board.idFromCoord((-4, -4))
+        return (startPositions, endPositions, targetTip)
 
     def buildFields(self) -> list[HalmaField]:
         """Return every field, already ordered by id.

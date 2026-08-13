@@ -18,7 +18,7 @@ def gameAtHumanTurn(plies=6):
     """A game with history behind it, stopped on the human's turn."""
     game = InteractiveGame()
     game.seed(0)
-    game.initGame([Computer(1, "advancedDistScore"), HumanPlayer(2)])
+    game.initGame([Computer(1, "distance"), HumanPlayer(2)])
     playback = GamePlaybackController(game)
     for _ in range(plies):
         player = game.currentPlayer()

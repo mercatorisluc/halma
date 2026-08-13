@@ -15,7 +15,7 @@ the environment alone steps at ~1650/s, the environment with PPO in the loop at
 ~120/s. A squeezed feature extractor and four PPO epochs instead of ten run at
 319 steps/s against 120. Measured over a fixed quarter hour each, same seed and
 opponent, the cheap configuration got through 288,769 steps against 108,545 and
-came out ahead on every measure -- pieces home against ``advancedDistScore``
+came out ahead on every measure -- pieces home against ``distance``
 8.5% against 1.7% by argmax, and better on all six pairings. So the extra steps
 more than pay for the smaller network and the fewer passes. Neither won a game.
 """
@@ -198,7 +198,7 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=100_000, help="training timesteps")
     parser.add_argument(
         "--opponent",
-        default="advancedDistScore",
+        default="distance",
         help="opponent tracked in progress reports and the final results",
     )
     parser.add_argument(
@@ -214,7 +214,7 @@ def main() -> None:
         "--evalOpponents",
         nargs="+",
         default=None,
-        help="bots to report results against (default: --opponent, sparsityScore, random)",
+        help="bots to report results against (default: --opponent, shaped, random)",
     )
     parser.add_argument("--games", type=int, default=100, help="evaluation games")
     parser.add_argument("--gamma", type=float, default=0.99)
@@ -379,7 +379,7 @@ def main() -> None:
     # ones: progress is likely to show against a weak opponent well before it
     # shows against the one it is being beaten by. --evalOpponents overrides
     # this, e.g. to check a pooled run against every bot in heuristics/.
-    opponents = args.evalOpponents or [args.opponent, "sparsityScore", "random"]
+    opponents = args.evalOpponents or [args.opponent, "shaped", "random"]
     opponents = list(dict.fromkeys(opponents))
 
     if args.opponentModel:

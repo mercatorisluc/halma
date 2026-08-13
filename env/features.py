@@ -31,7 +31,7 @@ That split is the answer to a measured problem. ``env/searchPlayer.py`` ranked
 sibling positions with the critic and played *worse* than the policy it wrapped
 (ARCHITECTURE.md), and of the two candidate causes -- the PPO objective, which
 only ever asks the critic to be a baseline, and capacity -- this addresses the
-second: the value head used to be 20,673 parameters behind a bottleneck whose
+second: the value head used to be 20,673 parameters behind a straggler whose
 shape the policy had chosen. It does not address the first, and the sibling-
 ranking probe recorded in ARCHITECTURE.md is still the measurement that says
 which of the two was actually binding.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 
 from game.board import HalmaBoard
-from game.boardTypes import AnyMove, FieldId, MovePath, PlayerId
+from game.boardTypes import AnyMove, MovePath, PlayerId
 from game.initializer import Initializer
 from game.move import Move
 from game.player import Computer, HalmaPlayer, HumanPlayer
@@ -38,10 +38,24 @@ class HalmaGame:
         self.rng.seed(seed)
 
     def initGame(self, players: list[HalmaPlayer]) -> None:
+        # Own list: the caller keeps its own, and neither should see the other's
+        # edits.
+        self.players = list(players)
         self.initializer.initializeBoard(self.board)
-        self.initPlayers(players)
+        self.initializer.initializePlayers(self.players, self.board)
+        self.seatPlayers()
+        self.computePlayersOrder()
         self.initializer.initPermissions(self.board, self.players)
         self.moves = []
+
+    def seatPlayers(self) -> None:
+        """Give the players what the game owns rather than the layout does."""
+        for player in self.players:
+            player.rng = self.rng
+            # Strategies that search need to score the opposition too, and the
+            # board holds no player list. Injected here rather than passed into
+            # scoringFunction so its (board, player) signature stays put.
+            player.opponents = [other for other in self.players if other is not player]
 
     def initStandardGame(self) -> None:
         # Subclasses seat their own players (bots and/or a human).
@@ -50,33 +64,6 @@ class HalmaGame:
     def reset(self) -> HalmaGame:
         self.initStandardGame()
         return self
-
-    def initPlayers(self, players: list[HalmaPlayer]) -> None:
-        self.players = []
-        if len(players) > 0:
-            self.setPlayerPositions(players[0], self.initializer.player1Positions(self.board))
-        if len(players) > 1:
-            self.setPlayerPositions(players[1], self.initializer.player2Positions(self.board))
-        if len(players) > 2:
-            self.setPlayerPositions(players[2], self.initializer.player3Positions(self.board))
-        for player in players:
-            self.players.append(player)
-            player.rng = self.rng
-            player.prepareForGameStart(self.board)
-        for player in self.players:
-            # Strategies that search need to score the opposition too, and the
-            # board holds no player list. Injected here rather than passed into
-            # scoringFunction so its (board, player) signature stays put.
-            player.opponents = [other for other in self.players if other is not player]
-        self.computePlayersOrder()
-
-    def setPlayerPositions(
-        self, player: HalmaPlayer, positionsTriplet: tuple[list[FieldId], list[FieldId], FieldId]
-    ) -> None:
-        startPositions, endPositions, homeBase = positionsTriplet
-        player.setStartPositions(startPositions)
-        player.setEndPositions(endPositions)
-        player.setHomeBase(homeBase)
 
     def computePlayersOrder(self) -> None:
         self.playOrder = self.rng.sample(self.players, k=len(self.players))
@@ -162,14 +149,14 @@ class ComputedGame(HalmaGame):
         super().__init__()
 
     def initStandardGame(self) -> None:
-        bot1 = Computer(1, "advancedDistScore")
-        bot2 = Computer(2, "sparsityScore")
+        bot1 = Computer(1, "distance")
+        bot2 = Computer(2, "shaped")
         super().initGame([bot1, bot2])
 
     def init3PlayerGame(self) -> None:
-        bot1 = Computer(1, "advancedDistScore")
-        bot2 = Computer(2, "sparsityScore")
-        bot3 = Computer(3, "advancedDistScore")
+        bot1 = Computer(1, "distance")
+        bot2 = Computer(2, "shaped")
+        bot3 = Computer(3, "distance")
         super().initGame([bot1, bot2, bot3])
 
     def isHumanGame(self) -> bool:
@@ -187,7 +174,7 @@ class InteractiveGame(HalmaGame):
         super().__init__()
 
     # The strongest measured bot, so the human gets a real opponent: lookahead2
-    # beats bottleneck 90%, which beats advancedDistScore 84%. Its worst move
+    # beats straggler 90%, which beats distance 84%. Its worst move
     # takes ~130ms, over the pygame loop's 100ms frame budget, but that reads as
     # the opponent thinking rather than as a stutter. ComputedGame deliberately
     # keeps the cheap bots -- it feeds the RL env, which needs speed.

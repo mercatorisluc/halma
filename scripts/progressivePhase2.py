@@ -64,7 +64,7 @@ ENTROPY = 0.01
 SEED = 42
 LEARNING_RATE = 1e-4
 # The load-bearing setting, unchanged from phase 1: without it, a round drove
-# approx_kl to 0.064 and collapsed argmax strength against advancedDistScore
+# approx_kl to 0.064 and collapsed argmax strength against distance
 # from 97% to 46%.
 TARGET_KL = 0.02
 STEPS_PER_ROUND = 300_000

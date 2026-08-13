@@ -71,7 +71,7 @@ def test_the_seated_policy_plays_a_whole_game_legally(checkpoint):
     agent = NeuralComputer(HalmaEnv.AGENT_SEAT, checkpoint)
     game = ComputedGame()
     game.seed(0)
-    game.initGame([agent, Computer(2, "advancedDistScore")])
+    game.initGame([agent, Computer(2, "distance")])
     agent.attachTo(game)
 
     for _ in range(40):
@@ -88,7 +88,7 @@ def test_the_seated_policy_plays_legally_from_either_seat(checkpoint):
     agent = NeuralComputer(HalmaEnv.OPPONENT_SEAT, checkpoint)
     game = ComputedGame()
     game.seed(0)
-    game.initGame([Computer(1, "advancedDistScore"), agent])
+    game.initGame([Computer(1, "distance"), agent])
     agent.attachTo(game)
 
     for _ in range(40):

@@ -27,7 +27,7 @@ def searchGame(checkpoint, **kwargs):
     agent = SearchingComputer(HalmaEnv.AGENT_SEAT, checkpoint, **kwargs)
     game = ComputedGame()
     game.seed(0)
-    game.initGame([agent, Computer(2, "advancedDistScore")])
+    game.initGame([agent, Computer(2, "distance")])
     agent.attachTo(game)
     return agent, game
 
@@ -220,7 +220,7 @@ def test_attaching_to_a_game_forgets_the_previous_one(checkpoint):
 
     nextGame = ComputedGame()
     nextGame.seed(1)
-    nextGame.initGame([agent, Computer(2, "advancedDistScore")])
+    nextGame.initGame([agent, Computer(2, "distance")])
     agent.attachTo(nextGame)
 
     assert agent.seen == set()

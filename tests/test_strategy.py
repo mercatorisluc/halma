@@ -11,33 +11,43 @@ def player(game):
 
 
 def test_advanced_dist_score_dispatches_to_the_advanced_formula(board, player):
-    strategy = Strategy("advancedDistScore")
-    expected = (board.advancedDistanceScore(player) + board.homeBonusScore(player)) / 2
+    strategy = Strategy("distance")
+    expected = (board.openTargetDistanceScore(player) + board.unfilledTargetScore(player)) / 2
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
 
 
+def test_advanced_dist_score_does_not_use_the_static_tip_distance(board, player):
+    # The measured change: the distance half is the incremental term alone, not
+    # a blend with tipDistanceScore. Blending is both weaker and 2.6x slower
+    # -- see Strategy.plainDistance -- so pin it rather than leave the next
+    # reader to reinstate a term that looks missing.
+    blended = (board.openTargetDistanceScore(player) + board.tipDistanceScore(player)) / 2
+    withBlend = (blended + board.unfilledTargetScore(player)) / 2
+    assert Strategy("distance").scoringFunction(board, player) != pytest.approx(withBlend)
+
+
 def test_simple_dist_score_dispatches_to_the_simple_formula(board, player):
-    strategy = Strategy("simpleDistScore")
-    expected = (board.simpleDistanceScore(player) + board.homeBonusScore(player)) / 2
+    strategy = Strategy("tipDistance")
+    expected = (board.tipDistanceScore(player) + board.unfilledTargetScore(player)) / 2
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
 
 
 def test_sparsity_score_dispatches_to_the_combined_formula(board, player):
-    strategy = Strategy("sparsityScore")
-    home = board.homeBonusScore(player)
+    strategy = Strategy("shaped")
+    home = board.unfilledTargetScore(player)
     shape = (
-        board.sparsityScore(player)
-        + board.playerSparsityScore(player)
-        + board.potentialJumpScore(player)
+        board.clusteringScore(player)
+        + board.stragglerLagScore(player)
+        + board.jumpPotentialScore(player)
     )
-    expected = board.advancedDistanceScore(player) + home + home * shape
+    expected = board.openTargetDistanceScore(player) + home + Strategy.SHAPE_WEIGHT * home * shape
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
 
 
 def test_sparsity_shape_terms_vanish_once_every_piece_is_home(board, game):
     # The endgame fix: the shape terms are opening advice and used to outvote
     # progress, leaving the bot unable to place its last pieces. Scaled by
-    # homeBonusScore they fall away entirely once the target is full.
+    # unfilledTargetScore they fall away entirely once the target is full.
     player = game.players[0]
     for field in board.fields:
         if field.playerID == player.identifier:
@@ -47,19 +57,19 @@ def test_sparsity_shape_terms_vanish_once_every_piece_is_home(board, game):
     player.positions = set(player.endPositions)
     player.nonArrived = set()
     player.openEndPositions = set()
-    player.distanceScore = board.calculatePlayerDistanceScore(player)
+    player.distanceScore = board.calculateOpenTargetDistance(player)
 
-    assert board.homeBonusScore(player) == 0.0
-    assert Strategy("sparsityScore").scoringFunction(board, player) == pytest.approx(
-        board.advancedDistanceScore(player)
+    assert board.unfilledTargetScore(player) == 0.0
+    assert Strategy("shaped").scoringFunction(board, player) == pytest.approx(
+        board.openTargetDistanceScore(player)
     )
 
 
 def test_bottleneck_dispatches_to_advanced_dist_plus_the_straggler(board, player):
-    strategy = Strategy("bottleneck")
+    strategy = Strategy("straggler")
     expected = (
-        board.advancedDistanceScore(player) + board.homeBonusScore(player)
-    ) / 2 + Strategy.BOTTLENECK_WEIGHT * board.bottleneckScore(player)
+        board.openTargetDistanceScore(player) + board.unfilledTargetScore(player)
+    ) / 2 + Strategy.STRAGGLER_WEIGHT * board.stragglerTravelScore(player)
     assert strategy.scoringFunction(board, player) == pytest.approx(expected)
 
 
@@ -127,7 +137,7 @@ def test_best_move_leaves_board_and_player_state_unchanged(board, game):
     beforeBoard = board.boardState().copy()
     beforePositions = set(player.positions)
 
-    Strategy("advancedDistScore").bestMove(moves, board, player)
+    Strategy("distance").bestMove(moves, board, player)
 
     assert (board.boardState() == beforeBoard).all()
     assert player.positions == beforePositions
@@ -142,7 +152,7 @@ def test_board_is_restored_when_scoring_raises(board, game):
     beforePositions = set(player.positions)
     beforeScore = player.distanceScore
 
-    strategy = _RaisingStrategy("advancedDistScore")
+    strategy = _RaisingStrategy("distance")
 
     with pytest.raises(ValueError):
         strategy.bestMove(sorted(board.allValidMoves(player)), board, player)
@@ -169,7 +179,7 @@ def test_random_strategy_returns_one_of_the_offered_moves(board, game):
 def test_best_move_selects_a_minimum_scoring_move(board, game):
     player = game.players[0]
     moves = sorted(board.allValidMoves(player))
-    strategy = Strategy("simpleDistScore")
+    strategy = Strategy("tipDistance")
 
     scores = {}
     for move in moves:

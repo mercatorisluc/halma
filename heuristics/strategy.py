@@ -19,41 +19,86 @@ class Strategy:
     """
 
     SCORERS: ClassVar[dict[str, str]] = {
-        "advancedDistScore": "advancedDist",
-        "simpleDistScore": "simpleDist",
-        "sparsityScore": "sparsity",
-        "bottleneck": "bottleneck",
+        "distance": "plainDistance",
+        "tipDistance": "tipDistance",
+        "shaped": "shaped",
+        "straggler": "straggler",
         "random": "chooseRandom",
     }
 
-    # How heavily bottleneckScore counts next to the distance term. Measured
-    # over 150 games against advancedDistScore: 0.02 -> 81%, 0.05 -> 84%,
+    # The names these bots went by until 2026-08-14, still accepted so that
+    # every command line, script and training recipe written down before then
+    # keeps working. They resolve to the canonical name at construction, so
+    # nothing downstream ever sees the old spelling. Deliberately temporary --
+    # drop them once the recorded recipes have been moved over.
+    ALIASES: ClassVar[dict[str, str]] = {
+        "advancedDistScore": "distance",
+        "simpleDistScore": "tipDistance",
+        "sparsityScore": "shaped",
+        "bottleneck": "straggler",
+    }
+
+    # How heavily stragglerTravelScore counts next to the distance term. Measured
+    # over 150 games against `distance`: 0.02 -> 81%, 0.05 -> 84%,
     # 0.1 -> 82%, 0.3 and 1.0 -> 81%. The exact value barely matters, because
     # the term mostly reorders moves the distance score leaves tied.
-    BOTTLENECK_WEIGHT = 0.05
+    STRAGGLER_WEIGHT = 0.05
+
+    # How heavily `shaped`'s three shape terms count against its distance
+    # term. Unlike STRAGGLER_WEIGHT this one matters a great deal and is not
+    # smooth -- measured over 200-300 games against the previous formulation:
+    # 0.02 -> 38.5%, 0.05 -> 52.5%, 0.08 -> 72.0%, 0.10 -> 62.0%, 0.13 -> 81.3%,
+    # 0.16 -> 79.3%, 0.20 -> 23.7%, 0.30 -> 4.5%. The cliff above 0.16 is the
+    # endgame failure its docstring describes, and the dip at 0.10 is real
+    # rather than noise: these bots are deterministic bar tie-breaks, so a small
+    # reweighting reorders whole games. Do not tune this by reasoning about it.
+    SHAPE_WEIGHT = 0.13
 
     def __init__(self, strategyName: str) -> None:
+        strategyName = self.ALIASES.get(strategyName, strategyName)
         # Fail here rather than at the first scoring call, which used to raise a
         # bare KeyError somewhere deep inside a game.
         if strategyName not in self.SCORERS:
             raise ValueError(f"unknown strategy {strategyName!r}; known: {sorted(self.SCORERS)}")
         self.strategyName = strategyName
 
-    def advancedDist(self, board: HalmaBoard, player: HalmaPlayer) -> float:
-        distanceScore = board.advancedDistanceScore(player)
-        homeBonus = board.homeBonusScore(player)
+    def plainDistance(self, board: HalmaBoard, player: HalmaPlayer) -> float:
+        """Remaining travel to the open targets, plus how much of the target is
+        still empty.
+
+        The distance term used to be blended half-and-half with
+        `tipDistanceScore`, the static distance to the tip of the target
+        triangle. Dropping that half is both stronger and cheaper, measured over
+        400 games with seats swapped: 60.5% (+/- 4.8) head to head, and better
+        against every third party too -- 20.2% against `straggler` where the
+        blend scored 18.5%, 21.8% against `shaped` where it scored 19.2%,
+        92.0% against `tipDistance` where it scored 88.8%. What it gains is
+        not a better distance measure but a bigger share for `unfilledTargetScore`:
+        keeping the distance term's old weight and only swapping the measure
+        scores 34.0%.
+
+        Cheaper because `openTargetDistanceScore` is O(1) -- it reads the
+        incrementally maintained `player.distanceScore` -- where the static term
+        sums over all 15 pieces: 0.081 us against 0.422 us for the blend, and
+        0.224 us against 0.583 us for this scorer, a factor of 2.6. Dispatch
+        through `scoringFunction` adds a flat 0.097 us on top of either. That is
+        the number that matters for `scripts/pretrain.py`, which generates its
+        samples with this bot.
+        """
+        distanceScore = board.openTargetDistanceScore(player)
+        homeBonus = board.unfilledTargetScore(player)
         return (distanceScore + homeBonus) / 2
 
-    def simpleDist(self, board: HalmaBoard, player: HalmaPlayer) -> float:
-        distanceScore = board.simpleDistanceScore(player)
-        homeBonus = board.homeBonusScore(player)
+    def tipDistance(self, board: HalmaBoard, player: HalmaPlayer) -> float:
+        distanceScore = board.tipDistanceScore(player)
+        homeBonus = board.unfilledTargetScore(player)
         return (distanceScore + homeBonus) / 2
 
     def chooseRandom(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         # Every move scores the same, so bestMove's tie-break picks at random.
         return 1
 
-    def sparsity(self, board: HalmaBoard, player: HalmaPlayer) -> float:
+    def shaped(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         """Distance and home progress, shaped by three terms that fade out.
 
         The three shape terms -- clustering, group cohesion, jump potential --
@@ -64,30 +109,43 @@ class Strategy:
         +0.143, so the move scored worse and was never played. Two pieces stayed
         out forever, 37 of 40 self-play games ended in the move limit.
 
-        Multiplying them by homeBonusScore makes them fade as pieces arrive and
-        vanish once everything is home, leaving only progress to decide the
-        endgame. That single change removed every draw (0 of 40) and took the
-        bot from 22.5% against advancedDistScore to 78.3%, level with
-        bottleneck.
-        """
-        home = board.homeBonusScore(player)
-        shape = (
-            board.sparsityScore(player)
-            + board.playerSparsityScore(player)
-            + board.potentialJumpScore(player)
-        )
-        return board.advancedDistanceScore(player) + home + home * shape
+        Multiplying them by `unfilledTargetScore` makes them fade as pieces
+        arrive and vanish once everything is home, leaving only progress to
+        decide the endgame. That single change removed every draw (0 of 40) and
+        took the bot from 22.5% against `distance` to 78.3%.
 
-    def bottleneck(self, board: HalmaBoard, player: HalmaPlayer) -> float:
-        """advancedDist, plus a penalty for the piece left furthest behind.
+        The distance term is `openTargetDistanceScore`, the same one
+        `plainDistance` uses. It used to be a blend of that and the static tip
+        distance, which is roughly 7.5x larger, and the shape terms were
+        weighted against *that* magnitude implicitly -- swapping the measure
+        without touching the weights therefore handed them the vote and the bot
+        won 0.0% of 800 games. Making the weight explicit and re-measuring it
+        (see SHAPE_WEIGHT) is what let the blend go, and it bought a much
+        stronger bot rather than merely an equal one. Over 400 games with seats
+        swapped it wins 81.3% against the version it replaced, and against the
+        rest of the panel, with that version's score for comparison: 58.2%
+        against `straggler` (was 38.0%), 92.0% against `distance` (was 74.5%),
+        99.8% against `tipDistance` (was 96.8%). That makes it the strongest of
+        the one-ply bots.
+        """
+        home = board.unfilledTargetScore(player)
+        shape = (
+            board.clusteringScore(player)
+            + board.stragglerLagScore(player)
+            + board.jumpPotentialScore(player)
+        )
+        return board.openTargetDistanceScore(player) + home + self.SHAPE_WEIGHT * home * shape
+
+    def straggler(self, board: HalmaBoard, player: HalmaPlayer) -> float:
+        """`plainDistance`, plus a penalty for the piece left furthest behind.
 
         Advancing the pack is not enough to win -- the last piece home ends the
-        game. Adding that straggler's remaining distance beats plain
-        advancedDist by a wide margin (84% over 150 games).
+        game. Adding that straggler's remaining distance beats `plainDistance`
+        on its own by a wide margin (84% over 150 games).
         """
-        return self.advancedDist(board, player) + self.BOTTLENECK_WEIGHT * board.bottleneckScore(
-            player
-        )
+        return self.plainDistance(
+            board, player
+        ) + self.STRAGGLER_WEIGHT * board.stragglerTravelScore(player)
 
     def scoringFunction(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         scorer = getattr(self, self.SCORERS[self.strategyName])
@@ -120,7 +178,7 @@ class LookaheadStrategy(Strategy):
     training data.
 
     It is the strongest bot here: 90% (+/- 9.3 over 40 games) against
-    ``bottleneck``, which is itself 84% against ``advancedDistScore``. Worst
+    ``straggler``, which is itself 84% against ``distance``. Worst
     observed move takes 132ms, which is a natural-feeling pause in a
     turn-based game but far too slow to generate training data with.
 
@@ -138,15 +196,15 @@ class LookaheadStrategy(Strategy):
     NAME = "lookahead2"
 
     def __init__(self) -> None:
-        # bottleneck is the leaf evaluation; the public name is its own, since
+        # straggler is the leaf evaluation; the public name is its own, since
         # this is a search rather than one of the scoring functions.
-        super().__init__("bottleneck")
+        super().__init__("straggler")
         self.strategyName = self.NAME
 
     def evaluate(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         """Own progress minus the opposition's. Lower is better."""
-        own = self.bottleneck(board, player)
-        return own - sum(self.bottleneck(board, other) for other in player.opponents)
+        own = self.straggler(board, player)
+        return own - sum(self.straggler(board, other) for other in player.opponents)
 
     def bestMove(self, moves: list[MovePath], board: HalmaBoard, player: HalmaPlayer) -> MovePath:
         scored = []
@@ -171,7 +229,7 @@ class LookaheadStrategy(Strategy):
         best, bestValue = replies[0], None
         for reply in replies:
             with board.moveApplied(reply, opponent):
-                value = self.bottleneck(board, opponent)
+                value = self.straggler(board, opponent)
             if bestValue is None or value < bestValue:
                 best, bestValue = reply, value
         with board.moveApplied(best, opponent):

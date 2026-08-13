@@ -107,8 +107,8 @@ class HalmaEnv(gym.Env):
 
     def __init__(
         self,
-        agentStrategy: str = "advancedDistScore",
-        opponentStrategy: str | Sequence[str] = "sparsityScore",
+        agentStrategy: str = "distance",
+        opponentStrategy: str | Sequence[str] = "shaped",
         opponentModel: str | None = None,
         opponentModelPool: Sequence[str] | None = None,
         shapingWeight: float = 1.0,
@@ -269,7 +269,7 @@ class HalmaEnv(gym.Env):
         opponent: HalmaPlayer = self._opponentNeural or Computer(
             self.otherSeat, self.opponentStrategy
         )
-        # HalmaGame.initPlayers hands out home corners by list position, not
+        # Initializer.initializePlayers hands out home corners by list position, not
         # by a player's own identifier -- players[0] always gets
         # player1Positions -- so the two have to go in seat order regardless
         # of which one is "self", or selfSeat=OPPONENT_SEAT would seat the
@@ -598,7 +598,13 @@ class HalmaEnv(gym.Env):
     # --------------------------------------------------------------- shaping
 
     def _targetDistances(self, player: HalmaPlayer) -> np.ndarray:
-        """For every field, the steps from it to the nearest target field."""
+        """For every field, the steps from it to the nearest target field.
+
+        Deliberately not what `heuristics/` measures progress with -- that is
+        the distance to the tip of the triangle, which never bottoms out and so
+        cannot telescope. This is the zone distance, which reaches 0 exactly
+        when the game is won.
+        """
         distances = self.board.distanceMatrix
         targets = sorted(player.endPositions)
         return np.array(
@@ -617,9 +623,10 @@ class HalmaEnv(gym.Env):
         zero exactly when the game is won -- there are 15 target fields and 15
         pieces, so a sum of zero means each piece stands on one.
 
-        It replaces ``advancedDistanceScore + homeBonusScore``, which the bots
-        score on and which is the wrong objective to *shape* with. Two thirds of
-        that measure is ``simpleDistanceScore``, the distance to the single tip
+        It replaces the blend of ``openTargetDistanceScore`` and
+        ``tipDistanceScore`` plus ``unfilledTargetScore`` that the bots scored on
+        until 2026-08-13, and which is the wrong objective to *shape* with. Two
+        thirds of that measure was ``tipDistanceScore``, the distance to the tip
         field of the target triangle rather than to the zone: measured over 235
         moves it moved 10x further per move than the zone-distance term, so it
         was effectively the whole signal, and it pulled pieces at one corner

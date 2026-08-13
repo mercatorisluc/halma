@@ -12,8 +12,8 @@ def test_reseating_a_player_object_does_not_leak_its_previous_positions():
     than reset it, so a player kept whatever it hadn't yet moved home from a
     previous game, and move generation (board.py reads player.positions
     directly) would then read phantom pieces the fresh board never placed."""
-    agent = Computer(1, "advancedDistScore")
-    opponent = Computer(2, "advancedDistScore")
+    agent = Computer(1, "distance")
+    opponent = Computer(2, "distance")
 
     first = ComputedGame()
     first.seed(0)

@@ -166,12 +166,47 @@ completely full including opponent pieces (`playerIsWinningByBlockedFields`) —
 otherwise a single squatter could deadlock the game forever.
 
 `HalmaBoard` does double duty: move generation *and* the heuristic scoring
-functions the bots rank positions with (`simpleDistanceScore`,
-`advancedDistanceScore`, `sparsityScore`, `playerSparsityScore`,
-`potentialJumpScore`, `homeBonusScore`, `bottleneckScore`). For all of them
-**lower is better**.
+functions the bots rank positions with. For all of them **lower is better**:
+
+| primitive | what it measures | cost |
+|---|---|---|
+| `openTargetDistanceScore` | mean remaining travel of the pieces still out, to the targets still free | 0.085 µs |
+| `unfilledTargetScore` | fraction of target fields still empty | 0.136 µs |
+| `tipDistanceScore` | distance of every piece to the far *tip* of the target triangle | 0.311 µs |
+| `stragglerLagScore` | how far the most backward piece has fallen behind the pack's mean | 3.34 µs |
+| `jumpPotentialScore` | jumps currently available | 5.16 µs |
+| `clusteringScore` | deviation of each piece's neighbour occupancy from an ideal 0.75 | 5.63 µs |
+| `stragglerTravelScore` | remaining travel of the most backward piece, outright | 1.30 µs |
+
+The first two are what a bot needs at minimum; the rest are shape advice. Note
+the two-decade cost gap between them, which is why the cheap bots are cheap.
+
+`openTargetDistanceScore` is O(1) because it only normalises the incrementally
+maintained `player.distanceScore` (invariant 1). `player.targetDistance` is a
+constant per-field vector built at setup — distance to the nearest target field
+free or not — and it is **not** a scoring function: it exists as a lower bound
+inside `stragglerTravelScore`, having been measured and rejected as a ranking
+measure.
 
 ### `heuristics/` — the bots
+
+The five bots, and what each adds to the one above it:
+
+| bot | formula | per candidate |
+|---|---|---|
+| `random` | constant | 0.09 µs |
+| `distance` | `(openTargetDistance + unfilledTarget) / 2` | 0.33 µs |
+| `tipDistance` | the same with the tip measure instead | 0.57 µs |
+| `straggler` | `distance + 0.05 · stragglerTravel` | 1.7 µs |
+| `shaped` | `openTargetDistance + unfilled + 0.13 · unfilled · (clustering + stragglerLag + jumpPotential)` | 14.7 µs |
+
+**These names changed on 2026-08-14** — `advancedDistScore`, `simpleDistScore`,
+`sparsityScore` and `bottleneck` respectively — because the old ones had stopped
+describing the code. `advancedDistScore` was no longer the advanced one, and
+`sparsityScore` the bot and `sparsityScore` the primitive were different things,
+which is a trap when editing an opponent pool. `Strategy.ALIASES` still accepts
+the old spellings so recipes written before then keep running; they are meant to
+be removed once those recipes have moved over.
 
 `Strategy.SCORERS` maps a strategy name to the method implementing it and is
 the single source of truth for which strategies exist — construction validates
@@ -190,20 +225,94 @@ would otherwise be rediscovered the expensive way:
   Measured: one distinct value across 72 candidates. It only pays inside a
   search, where the replies differ, which is what `LookaheadStrategy` is for.
 - **Rewarding long available jump chains makes the bot worse**, badly: 8.8% and
-  0.0% win rates against `advancedDistScore` at two weights. Preferring
+  0.0% win rates against `distance` at two weights. Preferring
   positions that *have* long chains keeps pieces hoarding jump potential
   instead of advancing.
+- **Aiming `tipDistanceScore` at the target *zone* instead of at one field
+  makes the bot worse**, and this is the opposite of what the same measure does
+  as a shaping potential (see the reward section below), so it is worth being
+  precise about why. Ranking wants a *fine-grained* gradient: every field has
+  its own distance to the tip, so candidates are ordered everywhere on the
+  board, whereas distance to the nearest target field is full of plateaus that
+  leave candidates tied — and `bestMove` breaks ties at random, so the bot
+  dithers rather than finishing. Measured over 150 games with seats swapped,
+  against the tip version: zone distance 31.3% (±7.4) with 29 draws, restricted
+  to the pieces still out 22.0% with 70 draws, and aiming at the nearest *free*
+  target 22.0% with 79 draws. As `straggler` rather than `plainDistance` the
+  zone version scores 22.7%. The draw counts are the tell — the tie-breaking,
+  not the direction, is what is lost.
 
-What does work is `bottleneckScore`: the distance still facing the piece left
+  The same run answers a second question: `player.distanceScore` is not
+  redundant with it. Dropping the distance-to-open-targets term and ranking on
+  the zone distance alone scores 5.3% against the blend and 2.0% against the
+  tip version. The two terms measure different things — one is static and
+  fine-grained, the other tracks which targets are still free.
+
+What does work is `stragglerTravelScore`: the distance still facing the piece left
 furthest behind. The game ends only when every piece is home, so the sum of
 distances is the wrong late objective — it collapses while one straggler
-decides the length of the game. Adding it to `advancedDist` wins 84% (±5.9 over
-150 games) against plain `advancedDist`, robust across weights from 0.02 to 1.0.
+decides the length of the game. Adding it to `plainDistance` wins 84% (±5.9 over
+150 games) against plain `plainDistance`, robust across weights from 0.02 to 1.0.
 
-Strength order, all measured: `lookahead2` > `bottleneck` > `advancedDistScore`
-> `simpleDistScore` > `sparsityScore` >> `random`. `InteractiveGame` seats the
+What also works is **taking the static term out of `plainDistance` altogether**,
+which is where the two findings above meet: its distance half used to be a
+blend, half tip distance and half the incremental
+distance-to-open-targets score, and it is stronger with the tip half simply
+gone. Over 400 games with seats swapped it wins 60.5% (±4.8) head to head
+against the blend, and improves against every third party as well — 20.2%
+against `straggler` where the blend managed 18.5%, 21.8% against
+`shaped` against 19.2%, 92.0% against `tipDistance` against 88.8%.
+As `straggler`, and so as `lookahead2`'s leaf, it is level: 53.2% (±3.5) over
+800 games.
+
+What it buys is not a better distance measure but a larger share for
+`unfilledTargetScore`; keeping the distance term's old weight and changing only the
+measure scores 34.0%. It is also **2.6x cheaper** — `openTargetDistanceScore` reads
+the incrementally maintained `player.distanceScore` in O(1) where the static
+term sums over 15 pieces, 0.081 µs against 0.422 µs, taking the scorer from
+0.583 µs to 0.224 µs. That is the number that matters for
+`scripts/pretrain.py`, which generates its samples with this bot. It does *not*
+speed `straggler` up meaningfully: `stragglerTravelScore` alone is 7.2 µs, so it
+swamps everything the distance terms do.
+
+`shaped` held the blend for a while longer, because it adds its shape terms to
+the distance term directly instead of averaging, so those terms were weighted
+against the blend's magnitude implicitly: shrink the distance term by 7.5 and
+they take the vote back, which is the endgame failure its own docstring records.
+The leaner version lost **0.0%** of 800 games that way, and scaling the survivor
+back onto the old magnitude only reached 19.8%.
+
+**Making that weight explicit is what removed the blend, and it bought a much
+stronger bot.** `shaped` is now `openTargetDistanceScore + home +
+SHAPE_WEIGHT · home · shape`, weight 0.13, and over 400 games with
+seats swapped it wins 81.3% (±4.4) against the version it replaced, 58.2%
+against `straggler` where that version managed 38.0%, 92.0% against
+`distance` against 74.5%, and 99.8% against `tipDistance` against
+96.8%. Two warnings for anyone touching the weight: the response is **not
+smooth** — 0.08 → 72.0%, 0.10 → 62.0%, 0.13 → 81.3%, 0.16 → 79.3% — and above
+0.16 it falls off a cliff to 23.7% at 0.20 and 4.5% at 0.30, which is the
+endgame failure returning. Measure it, do not reason about it.
+
+**`stragglerTravelScore` is a pruned search, not the literal max-over-mins.** The
+literal form is 15×15 lookups and was 55% of `lookahead2`'s time per move. It
+now seeds the running maximum with `player.targetDistance` — the distance to the
+nearest target field free or not, hence a lower bound — and stops each inner
+scan at the first free target within that bound. Both shortcuts are exact;
+`tests/test_scores.py` compares it against the literal formula for every
+position of a full game. Measured: 5.9× faster early, 2.7× at ply 80, taking a
+`lookahead2` move from 75.4 ms to 35.3 ms and a full `straggler` game 1.6×
+faster.
+
+Strength order, all measured: `lookahead2` > `shaped` > `straggler` >
+`distance` > `tipDistance` >> `random`. `InteractiveGame` seats the
 strongest; `ComputedGame` keeps the cheap one-ply bots because it feeds the RL
 environment, where a two-ply search at ~130ms a move is out of the question.
+
+`shaped` sits at the top of the one-ply bots, not the bottom — this line
+said the opposite until 2026-08-13, from before the endgame fix in its docstring
+took it from 22.5% to 78.3%, and it moved again when the shape weight was
+measured. Two of the four beat the one `scripts/pretrain.py` clones from, which
+is worth weighing before the next clone.
 
 Seats confer no advantage, which is what makes `scripts/baseline.py` readable:
 in 400 mirror games seat 1 won 47.8% (±4.9) and the player on move 53.5%
@@ -449,7 +558,7 @@ is a pool: `reset()` draws one at random (from the seeded `np_random`, so the
 draw is reproducible) and that is who the agent faces for the whole episode.
 This exists because PPO fine-tuning against a single fixed bot sharpens
 against *that* bot specifically: the agent fine-tuned to 99% against
-`advancedDistScore` falls to 90–92% against random, weaker than the clone it
+`distance` falls to 90–92% against random, weaker than the clone it
 started from (96%), which never trained against a fixed opponent at all —
 `scripts/pretrain.py` fits it to a bot's move choices by cross-entropy rather
 than playing against it. Training against a pool is the fix under test:
@@ -608,9 +717,10 @@ Two things it is deliberately not:
   easily as by advancing, and an agent trained on the difference took exactly
   that route — it finished with none of its 15 pieces home while holding the
   opponent from 14 down to 12.
-- **Not the bots' `advancedDistanceScore + homeBonusScore`.** That is what
-  `heuristics/` ranks moves by, and it is a poor thing to shape with. Two thirds
-  of it is `simpleDistanceScore`, the distance to the single *tip* field of the
+- **Not the bots' distance blend plus `unfilledTargetScore`.** That is what
+  `heuristics/` ranked moves by when this was decided — no bot does any more —
+  and it is a poor thing to shape with. Two thirds
+  of it is `tipDistanceScore`, the distance to the single *tip* field of the
   target triangle rather than to the triangle: measured over 235 moves it moved
   ten times further per move than the zone-distance term, so it was effectively
   the whole signal, and it aimed at one corner. It also never bottoms out — a won
@@ -618,6 +728,19 @@ Two things it is deliberately not:
   shaping budget unreachable and paying pieces already home to shuffle towards
   the tip. Its distance term is averaged over the pieces still out, too, so a
   piece arriving shrank the numerator and the divisor together.
+
+  None of that was an argument for putting the zone distance in the bots
+  either: substituting it into `tipDistanceScore` was measured and costs
+  them roughly two thirds of their games — see the `heuristics/` section.
+  Shaping needs a potential that bottoms out; ranking needs a gradient without
+  plateaus, and the tip distance is the one that has no plateaus. Two roles,
+  two measures, and `player.targetTip` exists for the second one only.
+
+  What *did* follow, on 2026-08-13, is that `plainDistance` dropped the static
+  half of its distance term rather than replacing it — it is the same
+  observation as the first sentence above, that the term is coarse and dominant,
+  read from the ranking side. `shaped` kept it, because it is the one bot that
+  weights its other terms against that magnitude.
 
 Nearest target field per piece, rather than a min-cost assignment of pieces to
 target fields. The assignment is the exact remaining travel, but the two
@@ -631,7 +754,7 @@ worth an O(n³) matching — or a scipy dependency — on every step.
 These are load-bearing and mostly non-obvious. Each is pinned by a test.
 
 **1. `player.distanceScore` is maintained incrementally.**
-`board.updatePlayerDistanceScore` adjusts only the terms that changed rather
+`board.updateOpenTargetDistance` adjusts only the terms that changed rather
 than recomputing over all pieces. Two properties depend on it and are verified
 in `tests/test_scores.py`: applying a move and then its reverse restores the
 score exactly, and the incremental value matches a full recomputation. Both
@@ -765,7 +888,7 @@ once at setup so the heuristics can look up any pair in O(1).
 | `heuristics/` | Working; five bots, strength measured against each other |
 | `visual/` | Working; refactored into focused modules. No tests |
 | `env/` | Satisfies the Gymnasium API, masked and shaped; trained policies playable via `NeuralComputer` |
-| Agent | Cloned from a bot, then fine-tuned by PPO to 99% against `advancedDistScore` |
+| Agent | Cloned from a bot, then fine-tuned by PPO to 99% against `distance` |
 
 `env/` passes `gymnasium.utils.env_checker.check_env` and has action masking, a
 canonical observation and reproducible seeding.
@@ -813,12 +936,12 @@ signal is there, but the region of policy space where Halma is played is not
 somewhere random exploration arrives.
 
 **What worked was copying a bot first.** `scripts/pretrain.py` plays games with
-`bottleneck` on the agent's seat, records its choice in every position, and fits
+`straggler` on the agent's seat, records its choice in every position, and fits
 the policy to those choices by cross-entropy over the masked distribution. On
 150k positions and 12 epochs the policy agrees with the bot on 73% of positions
-and goes from 0% wins to 86% against `advancedDistScore` (argmax, 50 games).
+and goes from 0% wins to 86% against `distance` (argmax, 50 games).
 Scored over the same games, the teacher itself takes 68% — but it wins 64% against
-`sparsityScore` where the clone takes 54%, so the clone is at roughly teacher
+`shaped` where the clone takes 54%, so the clone is at roughly teacher
 strength and specialised to the opponent its data was collected against, not
 generally stronger. `scripts/train.py --init` fine-tunes from that checkpoint.
 
@@ -832,7 +955,7 @@ from the expert and its loss is the supervised one; `pretrain.py --mix --rounds`
 implements that form.
 
 **PPO on top of the clone clears its teacher.** 300k steps from `models/cloned`
-take it from 82% to **99% against `advancedDistScore`** (198W 2L of 200 games,
+take it from 82% to **99% against `distance`** (198W 2L of 200 games,
 argmax; 97.5% sampled), with the fine-tuned agent also finishing games in 50
 steps against the clone's 60. The margins do not overlap, so this is the answer
 to the question the shaping and speed work was in service of: reinforcement
@@ -849,13 +972,13 @@ policy that starts sharp needs smaller steps than one that starts diffuse;
 one.
 
 The agent is also **specialised to the opponent it trained against**: 99%
-against `advancedDistScore` but 90-92% against `random`, where the clone was at
+against `distance` but 90-92% against `random`, where the clone was at
 96%. Beating one bot decisively is not the same as playing Halma well, so the
 measurement worth having was against opponents it never saw.
 
 Measured, 30 games against each of four bots (argmax), mean win rate last:
 
-| checkpoint | advancedDist | bottleneck | sparsity | random | mean |
+| checkpoint | plainDistance | straggler | shaped | random | mean |
 |---|---|---|---|---|---|
 | `cloned` | 80.0 | 46.7 | 60.0 | **96.7** | 70.8 |
 | `tunedEnt000` | **100.0** | 90.0 | 76.7 | 86.7 | **88.3** |
@@ -864,9 +987,9 @@ Measured, 30 games against each of four bots (argmax), mean win rate last:
 At ±11 to ±18 on each cell, only the gaps between the clone and the tuned pair
 mean anything. Those say the specialisation is **narrower than it looked**: the
 clone is ahead only against `random`, and fine-tuning nearly doubles the score
-against `bottleneck` — the strongest one-ply bot, which neither checkpoint ever
+against `straggler` — the strongest one-ply bot, which neither checkpoint ever
 trained on. So PPO on top of the clone did not merely sharpen it against
-`advancedDistScore`; what it lost is ground against the weakest opponent, where
+`distance`; what it lost is ground against the weakest opponent, where
 the shortest path to a win is least like anything a bot would play. The two
 tuned checkpoints are indistinguishable, which is the entropy finding again.
 
@@ -877,11 +1000,11 @@ rather than a relative ordering, and all three checkpoints are measurable on it
 at once. A head-to-head result says only which of two policies is ahead, and says
 it against an opponent that moves as training does.
 
-75k further steps on `bottleneck` — a heuristic the agent had only ever seen
+75k further steps on `straggler` — a heuristic the agent had only ever seen
 baked into `cloned`'s imitation data, never as a PPO opponent — pushed
 `tunedOnBottleneck` past `tunedEnt000` on every one of those four bots except
 `lookahead2` (46% argmax), the one bot none of this lineage has ever trained
-against: 100% on `advancedDistScore` and `sparsityScore`, 96% on `bottleneck`
+against: 100% on `distance` and `shaped`, 96% on `straggler`
 itself, 90% on `random`.
 
 Head-to-head is also available now (`scripts/compareCheckpoints.py`, using
@@ -938,13 +1061,13 @@ new, and it took the top spot outright.
 story.** `scripts/pretrain.py --expert` now takes a list of bots instead of
 one; `collect()` draws one teacher per game from a seeded `rng`, so the
 recorded moves — and the fitted policy — are a blend rather than one bot's
-blind spots. `clone_from_multi` (`advancedDistScore` + `sparsityScore` +
-`bottleneck` as teachers) reached 68.7% agreement with its blended targets
+blind spots. `clone_from_multi` (`distance` + `shaped` +
+`straggler` as teachers) reached 68.7% agreement with its blended targets
 after 12 epochs, against ~73% for the single-teacher `cloned` — a harder
 target, as expected. Fine-tuning it with PPO's default learning rate
 reproduced the sharp-policy instability noted above for `cloned`, except this
 time it didn't recover: `approx_kl` ran 0.09-0.23 for the full 100k steps and
-argmax win rate against bots in the training pool *fell* (`sparsityScore`
+argmax win rate against bots in the training pool *fell* (`shaped`
 54%→22%), with sampled win rates on trained-on bots collapsing to 1%.
 Restarting from `clone_from_multi` with `--lr 1e-4 --targetKl 0.03` (200k
 steps, four-heuristic pool) fixed it — `approx_kl` held near 0.02-0.03 — and
@@ -974,7 +1097,7 @@ against that opponent over the run, ended **100-0 argmax against
 `pooledFinetuned` itself** in the post-run report, and topped the eleven-way
 round robin outright at 8-2, ahead of every heuristic-only lineage including
 the one it started from (`clone_from_multi` alone was 2-8). It still
-generalises to bots it never trained on -- 91% argmax vs `advancedDistScore`,
+generalises to bots it never trained on -- 91% argmax vs `distance`,
 93% vs `random`, though only 25% vs `lookahead2`, which nothing in this
 project has ever trained against. Its one clear head-to-head loss is to
 `tunedEnt000`. One run is not enough to call this the better method in
@@ -992,7 +1115,7 @@ runs six rounds of 50k/75k/100k/125k/150k/175k steps, each initialised from the
 previous round's checkpoint and trained against the accumulated pool of
 `Talos1.0` plus every earlier round — no heuristic anywhere in the draw
 (`--noHeuristicOpponents`). The first attempt omitted `--targetKl`, and round 2
-collapsed: argmax against `advancedDistScore` fell 97%→46%, `sparsityScore` to
+collapsed: argmax against `distance` fell 97%→46%, `shaped` to
 32%, and it lost 14% of games to `random`, with `approx_kl` running 0.044–0.064
 against the ~0.01 that is healthy here. Rerunning that same round with
 `--targetKl 0.02` and nothing else changed restored it to 100%. A 2x2 over
@@ -1000,7 +1123,7 @@ against the ~0.01 that is healthy here. Rerunning that same round with
 cells score ~100% across the panel, and entropy 0.03 — the value blamed first —
 is fine once updates are capped. The entropy runaway (`entropy_loss` -1.97 to
 -2.94) was a symptom of the oversized updates, not the driver. A control that
-added a `bottleneck` anchor to the training pool without the cap recovered only
+added a `straggler` anchor to the training pool without the cap recovered only
 partially (73%/60%/100%), so pure checkpoint self-play was never the problem
 either. `multiVsModel` above had already used `--targetKl 0.03` from the start;
 the progressive script simply failed to inherit that.
@@ -1046,9 +1169,9 @@ opening did not prevent it: it varies the *positions*, not the opponent.
 The heuristic panel says the same thing from the other side, and adds a cost
 the sweep cannot see. Argmax is unchanged and at the ceiling — 98–100% across
 the five fast bots, identical to `Talos1.1`. *Sampled* is worse on every
-non-trivial bot: `sparsityScore` **42.0% ± 9.7** against `Talos1.1`'s 69.0% ±
-9.1, `bottleneck` 61% against 75%, `advancedDistScore` 76% against 85%. The
-`sparsityScore` gap is far outside both intervals, so the policy's best move is
+non-trivial bot: `shaped` **42.0% ± 9.7** against `Talos1.1`'s 69.0% ±
+9.1, `straggler` 61% against 75%, `distance` 76% against 85%. The
+`shaped` gap is far outside both intervals, so the policy's best move is
 as good as before while its *distribution* got measurably worse — probability
 mass spread onto moves that are poor from the standard opening, which is the
 plausible cost of training away from that opening at entropy 0.03.
@@ -1129,8 +1252,8 @@ and 69.2%. The generation step is the same size as `Talos1.1`'s over
 
 **The heuristic panel finally says something again, and it is the sampled
 column.** Argmax has been at 100% since `Talos1.0`, but sampled play went from
-`Talos1.1`'s 85% / 69% / 75% (`advancedDistScore` / `sparsityScore` /
-`bottleneck`) to **98.3% / 90.0% / 93.3%**. That is the same measurement the
+`Talos1.1`'s 85% / 69% / 75% (`distance` / `shaped` /
+`straggler`) to **98.3% / 90.0% / 93.3%**. That is the same measurement the
 failed randomOpening run drove *down* to 42%, and it is the sharpest evidence
 that what improved is the policy's distribution rather than only its best move.
 
@@ -1192,7 +1315,7 @@ because none of it is derivable from the two files that remain:
 
 | # | checkpoint | how |
 |---|---|---|
-| 1 | `clone_from_multi` | `pretrain --expert advancedDistScore sparsityScore bottleneck --samples 150000 --epochs 12` |
+| 1 | `clone_from_multi` | `pretrain --expert advancedDistScore sparsityScore bottleneck --samples 150000 --epochs 12` (the bot names of the day; `distance shaped straggler` now) |
 | 2 | `multiVsModel` | 200k PPO from 1, opponent the frozen `pooledFinetuned`, `--lr 1e-4 --targetKl 0.03` |
 | 3 | `multiVsModel2` | 100k from 2, opponent the frozen `tunedEnt000`, same step size |
 | 4 | — | 150k from 3, against the five-heuristic pool |
@@ -1241,7 +1364,7 @@ that *searches* rather than scoring one ply — every other column has been at
 98–100% argmax since `Talos1.0`, and the two Talos-against-Talos instruments
 only ever compare the family with itself. So 1.5M rounds of league play bought
 strength against the league's own members and the fast bots (the sampled column
-above, 69%→90% against `sparsityScore`) while losing ground against the one
+above, 69%→90% against `shaped`) while losing ground against the one
 opponent that plays differently. The old lineage's 25–46% against `lookahead2`
 is not the comparison to draw here: `Talos1.0` and `Talos1.1` are fine.
 
@@ -1278,7 +1401,7 @@ contribution is exactly the part with the least training pressure.
 Capacity is a second candidate and is worth the numbers: of 689,403 parameters,
 632,392 sit in the feature extractor **shared with the policy**
 (`share_features_extractor=True`), and the value head is 20,673 — 256→64→64→1
-behind a bottleneck whose shape the policy determines. The 1×1 squeeze to 8
+behind a straggler whose shape the policy determines. The 1×1 squeeze to 8
 channels before the flatten was a parameter-count decision that suits a policy
 ("which piece, where") better than a value ("is this structure won").
 
@@ -1347,32 +1470,33 @@ around the unchanged engine plus a canvas front-end.
 
 `models/clone_from_multi_500k`, 2026-08-09. Same recipe as the old generation's
 step 1 — `pretrain --expert advancedDistScore sparsityScore bottleneck
---epochs 12` — run twice, at 150k and 500k samples, because the network is now
+--epochs 12`, in the bot names of the day — run twice, at 150k and 500k
+samples, because the network is now
 2.05M parameters against the old 689k and the agreement curve was still rising
 at epoch 12.
 
 | | old gen, 150k | new gen, 150k | new gen, **500k** |
 |---|---|---|---|
 | agreement with the teachers | 68.7% | 66.6% | **72.5%** |
-| vs `advancedDistScore`, argmax | — | 84.0% | **88.0%** |
-| vs `sparsityScore`, argmax | — | 42.0% | **90.0%** |
+| vs `distance`, argmax | — | 84.0% | **88.0%** |
+| vs `shaped`, argmax | — | 42.0% | **90.0%** |
 | vs `random`, argmax | — | 86.0% | **96.0%** |
-| vs `advancedDistScore`, sampled | — | 50.0% | 66.0% |
-| vs `sparsityScore`, sampled | — | 16.0% | 32.0% |
+| vs `distance`, sampled | — | 50.0% | 66.0% |
+| vs `shaped`, sampled | — | 16.0% | 32.0% |
 
 50 games per cell. The three teachers scored 46% / 78% / 76% against
-`advancedDistScore` over the same 50 games, so the 500k clone at 88% is above
+`distance` over the same 50 games, so the 500k clone at 88% is above
 all of them on that pairing — cloning cannot exceed its teacher at *imitation*,
 but a blend of three can beat any one of them at play.
 
 **The data mattered far more than the extra epochs would suggest.** At equal
 epochs the 500k run is 3.3× the gradient steps, so a per-epoch comparison
 flatters it; the endpoint is the honest read, and 66.6% → 72.5% on held-out
-*games* — the bot columns — is not a step-count artefact. `sparsityScore` is
+*games* — the bot columns — is not a step-count artefact. `shaped` is
 the striking one: 42% → 90% argmax. The 150k clone had a genuine blind spot
 there and more of the same data closed it.
 
-**The sampled columns are where this clone is still weak**, and `sparsityScore`
+**The sampled columns are where this clone is still weak**, and `shaped`
 at 32% is the number to watch through PPO. Sampled play is what
 `progressivePhase2` moved most on the old lineage, so there is precedent for
 it recovering; nothing here says it will.
