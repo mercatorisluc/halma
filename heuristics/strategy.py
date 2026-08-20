@@ -2,10 +2,70 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
+from heuristics.calibration import calibrator
+
 if TYPE_CHECKING:
     from game.board import HalmaBoard
     from game.boardTypes import MovePath
     from game.player import HalmaPlayer
+
+# Which board primitive each of `calibrated`'s weights multiplies.
+CALIBRATED_TERMS: dict[str, str] = {
+    "distance": "openTargetDistanceScore",
+    "home": "unfilledTargetScore",
+    "clustering": "clusteringScore",
+    "stragglerLag": "stragglerLagScore",
+    "jumpPotential": "jumpPotentialScore",
+}
+
+
+# One family of bots, one scoring function: a member is nothing but a
+# weight vector, and a term is switched off by weighting it 0. They exist to
+# be *different* rather than uniformly strong -- `env/` trains against an
+# opponent pool, and a pool of near-identical bots teaches an agent to beat
+# one opponent. Each vector is fitted by `scripts/fitWeights.py`; the
+# starting values here are `shaped`'s weights transplanted onto the
+# calibrated terms, which makes plain `calibrated` the honest "same bot,
+# comparable scales" control for the fit.
+CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
+    "calibrated": {
+        "distance": 1.0,
+        "home": 3.885,
+        "clustering": 0.052,
+        "stragglerLag": 0.166,
+        "jumpPotential": 0.04,
+    },
+    # Progress only: no shape terms at all, the leanest of the family.
+    "calibratedPlain": {
+        "distance": 1.0,
+        "home": 8.76,
+        "clustering": 0.0,
+        "stragglerLag": 0.0,
+        "jumpPotential": 0.0,
+    },
+    # One shape term each, so the three play visibly differently.
+    "calibratedCluster": {
+        "distance": 1.0,
+        "home": 1.0,
+        "clustering": 0.13,
+        "stragglerLag": 0.0,
+        "jumpPotential": 0.0,
+    },
+    "calibratedLag": {
+        "distance": 1.0,
+        "home": 2.753,
+        "clustering": 0.0,
+        "stragglerLag": 0.125,
+        "jumpPotential": 0.0,
+    },
+    "calibratedJump": {
+        "distance": 1.0,
+        "home": 2.803,
+        "clustering": 0.0,
+        "stragglerLag": 0.0,
+        "jumpPotential": 0.316,
+    },
+}
 
 
 class Strategy:
@@ -24,6 +84,7 @@ class Strategy:
         "shaped": "shaped",
         "straggler": "straggler",
         "random": "chooseRandom",
+        **dict.fromkeys(CALIBRATED_VARIANTS, "calibrated"),
     }
 
     # The names these bots went by until 2026-08-14, still accepted so that
@@ -54,6 +115,19 @@ class Strategy:
     # reweighting reorders whole games. Do not tune this by reasoning about it.
     SHAPE_WEIGHT = 0.13
 
+    # `calibrated`'s terms, in the order its feature vector lists them. The
+    # first is pinned to 1.0 by convention: scoring only ever compares
+    # candidates within one position, so multiplying every weight by a positive
+    # constant changes nothing, and leaving that freedom in would give the fit
+    # in `scripts/fitWeights.py` a direction it could wander along forever.
+    WEIGHT_ORDER: ClassVar[list[str]] = [
+        "distance",
+        "home",
+        "clustering",
+        "stragglerLag",
+        "jumpPotential",
+    ]
+
     def __init__(self, strategyName: str) -> None:
         strategyName = self.ALIASES.get(strategyName, strategyName)
         # Fail here rather than at the first scoring call, which used to raise a
@@ -61,6 +135,13 @@ class Strategy:
         if strategyName not in self.SCORERS:
             raise ValueError(f"unknown strategy {strategyName!r}; known: {sorted(self.SCORERS)}")
         self.strategyName = strategyName
+        variant = CALIBRATED_VARIANTS.get(strategyName)
+        self.weights = dict(variant) if variant else {}
+        # Held as closures rather than looked up per call; only built for the
+        # strategies that use them, since every Strategy runs this.
+        self.calibrators = (
+            {name: calibrator(name) for name in CALIBRATED_TERMS.values()} if variant else {}
+        )
 
     def plainDistance(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         """Remaining travel to the open targets, plus how much of the target is
@@ -135,6 +216,51 @@ class Strategy:
             + board.jumpPotentialScore(player)
         )
         return board.openTargetDistanceScore(player) + home + self.SHAPE_WEIGHT * home * shape
+
+    def calibratedFeatures(self, board: HalmaBoard, player: HalmaPlayer) -> list[float]:
+        """`calibrated`'s five terms, in `WEIGHT_ORDER`, before weighting.
+
+        Split out from the scorer so that `scripts/fitWeights.py` optimises the
+        exact quantity the bot goes on to play. The score is a dot product of
+        this and the weights, which is what makes the fit cheap: the features of
+        a candidate do not depend on the weights, so a whole position's
+        candidates can be reduced to one small matrix and every weight vector
+        after that costs a multiply.
+
+        `unfilledTargetScore` appears twice and only once calibrated. As a
+        summand it is a score like any other and belongs on the common scale. As
+        the factor that fades the shape terms out it is **not** a score at all
+        -- it is the fraction of the target still empty, and the endgame depends
+        on it reaching 0 exactly, which a calibrated version never does (its
+        lowest knot maps to 0.0065). That fade is what took `shaped` from 37
+        stuck games in 40 to none; calibrating it would quietly undo that.
+        """
+        home = board.unfilledTargetScore(player)
+        calibrate = self.calibrators
+        shape = [
+            calibrate[CALIBRATED_TERMS[name]](float(getattr(board, CALIBRATED_TERMS[name])(player)))
+            for name in ("clustering", "stragglerLag", "jumpPotential")
+        ]
+        return [
+            calibrate["openTargetDistanceScore"](board.openTargetDistanceScore(player)),
+            calibrate["unfilledTargetScore"](home),
+            *[home * term for term in shape],
+        ]
+
+    def calibrated(self, board: HalmaBoard, player: HalmaPlayer) -> float:
+        """`shaped` with every summand on a common scale and one weight each.
+
+        Same terms as `shaped` and the same fade, but the primitives go through
+        `heuristics/calibration.py` first, so the weights are the whole story
+        rather than sharing the job with whatever divisor each primitive
+        happened to carry. That is what makes `SHAPE_WEIGHT` -- one number
+        covering three terms of very different spreads -- splittable into five.
+        """
+        features = self.calibratedFeatures(board, player)
+        return sum(
+            self.weights[name] * feature
+            for name, feature in zip(self.WEIGHT_ORDER, features, strict=True)
+        )
 
     def straggler(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         """`plainDistance`, plus a penalty for the piece left furthest behind.

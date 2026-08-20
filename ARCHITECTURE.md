@@ -326,6 +326,195 @@ by one caller at a time, so candidate moves for a single position cannot be
 evaluated in parallel. Running several independent games at once is unaffected,
 since each has its own board.
 
+#### No term is redundant, and the expensive one is the least useful
+
+Two questions that look like one: do two primitives *measure* the same thing,
+and does the bot *need* both. `scripts/scoreCorrelation.py` answers the first,
+`scripts/ablateTerms.py` the second, and they disagree in a useful way.
+
+**Correlate primitives within a position, not over a game.** Over the course of
+a game every primitive drifts with the game's progress, so the correlations are
+high across the board and mean almost nothing — `tipDistanceScore` and
+`unfilledTargetScore` reach 0.98. But that shared drift is common to every
+candidate move in a position and cancels out of the ranking entirely. Ranking
+candidates is the only thing a scorer does, so the correlation that matters is
+Spearman across the candidate set of one position, averaged over positions.
+Measured over 17,848 positions and 3,627 candidate sets, the two views differ
+sharply: 0.98 → 0.53 for that pair, 0.93 → 0.55 for `tipDistanceScore` against
+`openTargetDistanceScore`.
+
+The open question about the two straggler terms is answered by this:
+`stragglerTravelScore` and `stragglerLagScore` correlate at **0.39** within a
+position (0.29 over the game). They are not two spellings of one measurement,
+and neither subsumes the other.
+
+**How much of a vote a term has is not its scale.** On the calibrated scale, the
+spread of each primitive across the candidates of a position:
+
+| primitive | spread across candidates | flat |
+|---|---|---|
+| `jumpPotentialScore` | 0.128 | 0.0% |
+| `clusteringScore` | 0.064 | 0.0% |
+| `stragglerLagScore` | 0.032 | 0.0% |
+| `openTargetDistanceScore` | 0.028 | 0.0% |
+| `stragglerTravelScore` | 0.027 | 4.1% |
+| `unfilledTargetScore` | 0.020 | 6.3% |
+| `tipDistanceScore` | 0.012 | 0.0% |
+
+`jumpPotentialScore` varies 4× as much across candidates as the other two shape
+terms it is weighted equally with, so it decides `shaped`'s shape vote almost by
+itself. The "flat" column is how often a primitive takes one value across every
+candidate and cannot influence the choice at all, which is the mechanism behind
+`STRAGGLER_WEIGHT` being recorded as barely mattering.
+
+**And it earns the least.** Dropping each shape term from `shaped` and playing
+the result against `shaped`, 200 games each (`scripts/ablateTerms.py`):
+
+| dropped | as is | magnitude restored |
+|---|---|---|
+| `clustering` | 22.5% (±5.8) | 41.5% (±6.8) |
+| `stragglerLag` | 24.5% (±6.0) | 3.0% (±2.4) |
+| `jumpPotential` | 47.0% (±6.9) | 23.0% (±5.8) |
+
+Every term is load-bearing, so none can simply go — but `jumpPotential` is
+nearly free to remove: 45.5% (±4.9) over a further 400 games, so it is worth
+some 4 points. It is also **6.00 µs of `shaped`'s 16.01 µs**, more than a third
+of the cost of the panel's strongest one-ply bot and the reason it cannot be
+searched on. Largest vote, largest cost, smallest contribution: that is a
+misweighting, not a bad term, and it is the clearest evidence that the weights
+are worth fitting rather than sweeping once the scales are comparable.
+
+The rescaled column is a warning of its own. Restoring the lost magnitude helps
+in one case and is catastrophic in another (`stragglerLag`, 24.5% → 3.0%), so
+the total magnitude of the shape sum is not a dial that can be reasoned about
+separately from which terms are in it. Same lesson as `SHAPE_WEIGHT`'s
+non-smooth response, from a different direction.
+
+#### The scale of a primitive is a hidden weight, and it was never chosen
+
+`heuristics/calibration.py` maps a raw primitive onto [0, 1] through its own
+measured distribution, which is uniform by construction. It exists because the
+primitives are measurements on unrelated scales and `shaped` adds five of them
+together: whatever divisor each one happens to carry *is* its weight in that
+sum. Measured over 57,110 positions from 40 games of every pairing of the four
+scoring bots:
+
+| primitive | min | max | mean | std | distinct |
+|---|---|---|---|---|---|
+| `tipDistanceScore` | 2.56 | 12.50 | 6.98 | 2.95 | 156 |
+| `openTargetDistanceScore` | 0.08 | 0.94 | 0.58 | 0.18 | 3780 |
+| `clusteringScore` | 0.13 | 0.87 | 0.46 | 0.14 | 1517 |
+| `stragglerLagScore` | 0.09 | 1.04 | 0.47 | 0.20 | 233 |
+| `stragglerTravelScore` | 1.00 | 13.00 | 9.14 | 2.98 | 13 |
+| `jumpPotentialScore` | 0.53 | 0.97 | 0.78 | 0.06 | 1136 |
+| `unfilledTargetScore` | 0.07 | 1.00 | 0.62 | 0.29 | 15 |
+
+The `/12` and `/16` divisors are simply wrong — `tipDistanceScore` reaches 12.5
+and `stragglerTravelScore` is not divided at all — and the spreads differ by 5×
+across the three terms `shaped` weights equally, so `jumpPotentialScore` has a
+third of `openTargetDistanceScore`'s vote purely by accident.
+
+**The obvious fix, a calibrated sigmoid, does not fit these distributions.** The
+logistic CDF is exactly the right transformation for a logistic variable, so it
+was the first thing tried; its worst-case deviation from uniform ran 0.044 to
+0.194 across the seven, against 0.015 to 0.021 for a 33-knot quantile table.
+`jumpPotentialScore` is sharply peaked and `tipDistanceScore` nearly flat —
+neither is bell-shaped. The sigmoid path is kept in the module because it is
+half the cost and the obvious thing to reach for again; nothing currently
+selects it. The two coarse primitives hit a floor no map can beat: 13 and 15
+distinct values cannot spread evenly over an interval, so their best possible
+deviation is 0.169 and 0.107, and the table reaches exactly that.
+
+`scripts/calibrateScores.py` does the measuring and writes
+`heuristics/calibrationData.py`, which is checked in so runtime never depends on
+having run it. Regenerate it when a primitive's definition changes.
+
+A quantile map's slope is 1/density, so it spreads differences where positions
+are dense and compresses the tails — and ranking candidates depends on precisely
+those differences. A calibrated primitive is therefore a *different* bot, not a
+rescaled one, which is why `shaped` was not converted in place: `calibrated`
+below is the converted version and both exist. Cost per calibrated term is
+0.13 µs, which is +5% on `shaped` and +23% on `straggler`. Only the `shaped`
+lineage is converted so far; `straggler` is `lookahead2`'s leaf and the search
+pays that surcharge b² times a move, so it wants its own measurement.
+
+#### `calibrated`: one scoring function, a family of bots, fitted weights
+
+Calibration is what makes a weight mean something, and the payoff is that the
+weights can then be *fitted* rather than guessed. `Strategy.calibrated` is
+`shaped`'s terms on the common scale with one weight each — `SHAPE_WEIGHT`, a
+single number that covered three terms of very different spreads, splits into
+five — and `CALIBRATED_VARIANTS` makes a bot out of nothing but a weight vector,
+where a switched-off term is a weight of 0.
+
+Two properties of that formulation carry the whole approach. The score is
+**linear in the weights**, so a position's candidates reduce to one small matrix
+and evaluating a weight vector is a multiply. And the weights are **scale-free**
+— multiplying all of them by a positive constant reorders nothing — so
+`distance` is pinned at 1.0 and the search is four-dimensional, not five.
+
+`unfilledTargetScore` appears twice with two different meanings, and only one of
+them is calibrated. As a summand it is a score like any other. As the factor
+that fades the shape terms out it is not a score at all but the fraction of the
+target still empty, and the endgame depends on it reaching exactly 0 — which a
+calibrated version never does, its lowest knot maps to 0.0065. Calibrating it
+would quietly undo the fade that took `shaped` from 37 stuck games in 40 to
+none. The rule that falls out: **calibrate summands, never factors.**
+
+`scripts/fitWeights.py` fits a variant by successive halving on win rate — 192
+vectors at 24 games, the survivors at 48, 120, 300 — with every candidate in a
+round playing the same seeds against the same opponents, so the comparisons are
+paired. Two approaches were tried and both failed in ways worth recording:
+
+- **Fitting on agreement with `lookahead2`** is the tempting cheap fitness:
+  deterministic, thousands of vectors a second, no game noise. It is useless
+  here, and the reason is a fact about the panel worth knowing on its own —
+  measured over 200 sampled positions, **`straggler` already picks `lookahead2`'s
+  move 99.5% of the time**. The search almost never departs from its own leaf.
+  So "agree with the search" means "be `straggler`", and the vectors that
+  maximised it lost every game they played (`shaped` scores 45.0% on the same
+  measure, `distance` 39.5%).
+- **Fitting against one opponent** produced a counter, not a better bot: against
+  `shaped` alone it found a vector that beat `shaped` 62.7% over fresh seeds
+  while being *weaker than `shaped`* against everyone else — 53.0% against
+  `straggler` where `shaped` scores 58.2%, 82.3% against `distance` where it
+  scores 92.0%. These bots are not transitive enough for that. The fitness is a
+  pool, cycled by seed.
+
+The fitted weights, against a pool of `shaped` and `straggler`:
+
+| bot | distance | home | clustering | stragglerLag | jumpPotential |
+|---|---|---|---|---|---|
+| `calibrated` | 1.0 | 3.885 | 0.052 | 0.166 | 0.040 |
+| `calibratedPlain` | 1.0 | 8.760 | 0 | 0 | 0 |
+| `calibratedCluster` | 1.0 | 1.000 | 0.130 | 0 | 0 |
+| `calibratedLag` | 1.0 | 2.753 | 0 | 0.125 | 0 |
+| `calibratedJump` | 1.0 | 2.803 | 0 | 0 | 0.316 |
+
+**The headline is `home`.** `shaped` weights it 1.0 against the distance term;
+the fit wants 3.885, and 8.760 for the variant with no shape terms at all. That
+is the same finding as the 2026-08-14 rebuild — dropping the static distance
+half helped because it gave `unfilledTargetScore` a larger share — except that
+this says the share was still far too small. The three shape terms shrink
+correspondingly, `jumpPotential` most of all, to 0.040.
+
+Confirmed on fresh seeds, 300 games per pairing, none of them seen by the fit:
+
+| | vs `shaped` | vs `straggler` | vs `distance` |
+|---|---|---|---|
+| `calibrated` | **73.7% (±5.0)** | 60.7% (±5.5) | 88.7% (±3.6) |
+| `shaped` | — | 60.0% (±5.5) | 89.3% (±3.5) |
+
+That is the bar the first fit failed: decisively ahead head to head *and* level
+against third parties, rather than a specialist. `calibrated` is now the
+strongest one-ply bot. Zero draws in all 1,800 games, so the fade held.
+
+The four partial variants are **not** meant to be strong — `calibratedPlain`
+wins 14% against the fit pool. They exist because `env/` trains against an
+opponent pool, and a pool of near-identical bots teaches an agent to beat one
+opponent. Whether they actually play *differently* rather than merely worse is
+not yet measured; the move-agreement mechanism above is what would answer it.
+
 ### `visual/` — the pygame front-end
 
 `GameVisualization` is the orchestrator and owns the main loop. It holds no

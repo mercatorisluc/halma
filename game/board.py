@@ -58,7 +58,7 @@ class HalmaBoard:
         self.placePiece(end, self.fields[start].playerID)
         self.removePiece(start)
         player.updatePositionWithMove(move)
-        self.updateOpenTargetDistance(player, move)
+        self.updateOpenTargetDistanceScore(player, move)
 
     @contextmanager
     def moveApplied(self, move: AnyMove, player: HalmaPlayer) -> Generator[HalmaBoard]:
@@ -192,12 +192,12 @@ class HalmaBoard:
         ]
 
     def calculateOpenTargetDistance(self, player: HalmaPlayer) -> int:
-        score = 0
+        distance = 0
         for pieceId in player.nonArrived:
-            score += sum(
+            distance += sum(
                 self.distanceMatrix[pieceId][targetId] for targetId in player.openEndPositions
             )
-        return score
+        return distance
 
     def openTargetDistanceScore(self, player: HalmaPlayer) -> float:
         score = player.distanceScore
@@ -205,7 +205,7 @@ class HalmaBoard:
         # scaling factor of 12
         return score / 12
 
-    def updateOpenTargetDistance(self, player: HalmaPlayer, move: AnyMove) -> None:
+    def updateOpenTargetDistanceScore(self, player: HalmaPlayer, move: AnyMove) -> None:
         # Incrementally maintain player.distanceScore after a move instead of
         # recomputing over all pieces: adjust only the terms that changed as a
         # piece left `start` and arrived at `end` (with corrections for moves
@@ -250,7 +250,7 @@ class HalmaBoard:
         # outright, this measures it relative to the pack -- a group that is
         # uniformly behind scores 0 here.
         targetTip = player.targetTip
-        assert targetTip is not None, "targetTip is set during game setup"
+        assert targetTip is not None
         distances = [self.distanceMatrix[p][targetTip] for p in player.positions]
         meanDist = np.mean(distances)
         maxDeviation = max(d - meanDist for d in distances)
@@ -286,8 +286,8 @@ class HalmaBoard:
             return 0.0
         distances = self.distanceMatrix
         targets = player.openEndPositions
-        targetDistance = player.targetDistance
-        best = max(targetDistance[piece] for piece in player.nonArrived)
+        targetDistances = player.targetDistances
+        best = max(targetDistances[piece] for piece in player.nonArrived)
         for piece in player.nonArrived:
             row = distances[piece]
             shortest = None

@@ -19,6 +19,15 @@ bot, `stragglerTravelScore` became a pruned search at 5.9x, and every bot and
 primitive was renamed. All measured and written up in ARCHITECTURE.md; what it
 leaves open is the section below.
 
+**2026-08-20: the scores were put on a common scale and the weights fitted.**
+Every primitive now maps onto [0, 1] through its own measured distribution
+(`heuristics/calibration.py`), so a weight is a weight rather than an accident
+of whatever divisor a primitive carried. On top of that sits a family of bots
+that share one scoring function and differ only in their weight vector —
+`calibrated` plus four deliberately partial members, fitted by
+`scripts/fitWeights.py` against an opponent pool. The measurements are in
+ARCHITECTURE.md; what is left is below under "Calibration: what is left".
+
 ## The panel moved — decide what that costs
 
 - [ ] **`lookahead2` is no longer the same bot**, and it is the anchor the two
@@ -43,12 +52,12 @@ leaves open is the section below.
 
 ## Heuristics still worth consolidating
 
-- [ ] **Two straggler terms, never measured against each other.**
-      `stragglerTravelScore` (absolute remaining travel, in `straggler`) and
-      `stragglerLagScore` (the same piece's lag behind the pack's mean, in
-      `shaped`) describe the same phenomenon differently. If one subsumes the
-      other, a term disappears from a scorer. `shaped` is the expensive bot, so
-      the interesting direction is whether it can drop `stragglerLagScore`.
+- [x] **Two straggler terms, never measured against each other.** Answered: they
+      correlate at 0.39 within a candidate set and neither subsumes the other,
+      and dropping `stragglerLagScore` costs `shaped` 24.5% (±6.0). Both stay.
+      Written up in ARCHITECTURE.md along with the finding that came out of the
+      same measurement — `jumpPotentialScore` has 4x the vote, 37% of the cost
+      and the least strength of `shaped`'s three shape terms.
 - [ ] **`shaped` computes its shape terms even when they cannot matter.** They
       are multiplied by `unfilledTargetScore`, so they fade to nothing as pieces
       arrive — but all 14 µs of them are still computed when that factor is near
@@ -58,6 +67,45 @@ leaves open is the section below.
 - [ ] **Remove `Strategy.ALIASES`** once the recorded recipes have been moved to
       the new bot names. It exists so that commands written before 2026-08-14
       keep running; it is not meant to be permanent.
+## Calibration: what is left
+
+- [x] **Put every primitive on a common scale**, and **fit the weights instead
+      of sweeping them**. Both done, both in ARCHITECTURE.md.
+- [x] **Confirm `calibrated` on fresh seeds.** Done: 73.7% (±5.0) against
+      `shaped`, and level with it against third parties. Adopted.
+- [ ] **The four partial variants have not been confirmed**, only `calibrated`
+      has. Their fitness numbers come from a search and are selection-biased.
+      They are not meant to be strong, so the question is not their win rate but
+      whether they are *sound* — a variant that stalls in the endgame would
+      poison a training pool. Check draws first: `python -m scripts.baseline
+      --bots calibratedPlain calibratedCluster calibratedLag calibratedJump
+      distance --games 200 --seed 20000 --jobs 8`.
+- [ ] **Check the family is actually diverse, not just differently strong.**
+      They exist to be an opponent pool for `env/`, and a pool of bots that pick
+      the same move 95% of the time teaches an agent to beat one opponent. The
+      measurement is pairwise move agreement over a fixed position set — same
+      mechanism as the `lookahead2` diagnostic in `scripts/fitWeights.py`, which
+      is where the 98% figure for `straggler` came from. If two variants are
+      near-duplicates, drop one and fit a differently-shaped one instead.
+- [ ] **`calibratedCluster`'s fit found nothing.** The control vector won its
+      round outright, which is either a real optimum or too small a search for
+      two free weights. One re-run at higher `--candidates` settles it; leave the
+      control in place until then.
+- [ ] **Decide whether `straggler` and `lookahead2` get calibrated too.** Only
+      the `shaped` lineage was converted. `straggler` pays +23% per candidate
+      against `shaped`'s +5%, and it is `lookahead2`'s leaf, so the search pays
+      it b² times a move. Measure before assuming it is affordable.
+- [ ] **Decide what `jumpPotentialScore` is for.** 6.00 µs of `shaped`'s
+      16.01 µs, and the fit weighted it down to 0.04 — near off — where the
+      ablation on the *uncalibrated* bot said it was worth 4.5 points. Those two
+      results are not in conflict, but they do mean nobody has yet measured what
+      dropping it costs the calibrated bot. Removing it makes `shaped` a third
+      cheaper, which is what stands between it and being `lookahead2`'s leaf or
+      `pretrain`'s teacher.
+- [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
+      of the exercise — Talos2 gets rebuilt from scratch on the new bots. Two
+      decisions belong to that moment and not before: which bot `scripts/pretrain.py`
+      clones from, and which of the calibrated family go into the opponent pool.
 
 ## Now
 

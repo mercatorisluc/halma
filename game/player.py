@@ -33,7 +33,7 @@ class HalmaPlayer:
         self.targetTip: FieldId | None = None
         # Field id -> steps to the nearest target field, free or not. Constant
         # for the game; stragglerTravelScore uses it as a lower bound.
-        self.targetDistance: list[int] = []
+        self.targetDistances: list[int] = []
         self.distanceScore = 0
         # Replaced with the game's generator when seated, so one seed
         # reproduces a whole game.
@@ -53,7 +53,7 @@ class HalmaPlayer:
         self.positions = set(self.startPositions)
         self.nonArrived = self.positions - self.endPositions
         self.openEndPositions = self.endPositions - self.positions
-        self.targetDistance = board.targetDistances(self)
+        self.targetDistances = board.targetDistances(self)
         self.distanceScore = board.calculateOpenTargetDistance(self)
 
     def updatePositionWithMove(self, move: AnyMove) -> None:
