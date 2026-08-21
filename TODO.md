@@ -81,18 +81,20 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       `calibratedLag` sits in the same cluster, and `calibrated` agrees with
       `shaped` 80.3%. `calibratedJump` and `calibratedCluster` are the two real
       axes. All in ARCHITECTURE.md.
-- [ ] **Replace `calibratedPlain` with a variant the family does not already
-      cover.** It is `distance` with a bigger `home` weight, on both measures.
-      The untried directions are *pairs* of shape terms, and the pair worth
-      fitting first is `clustering` + `jumpPotential` — the two most distinct
-      axes in the panel. `fitWeights.py` already handles this: a variant is
-      nothing but a weight vector and `activeTerms` searches whatever is
-      non-zero, so it needs a new entry in `CALIBRATED_VARIANTS` and a run.
-- [ ] **Decide `calibratedLag`'s fate** once the pair-variant exists. It is not
-      a duplicate the way `calibratedPlain` is (79.8% early, 90.4% midgame
-      against it), but it leans into the distance cluster rather than away from
-      it. Worth keeping only if the pool still needs a fourth member after the
-      replacement above.
+- [x] **Replace `calibratedPlain`.** Done: it is removed, and
+      `calibratedClusterJump` has its slot — sound, 48.0% against `calibrated`,
+      and agreeing with nothing above 63.2%. The run also produced the finding
+      that generalises: **fitting on win rate pulls pool members together**,
+      because in this panel win rate rewards `home`-heavy distance-like play.
+      The fit's own winner was the least distinct of three tied finalists.
+      Written up in ARCHITECTURE.md under "Fitting for strength does not fit
+      for a pool".
+- [ ] **Decide `calibratedLag`'s fate.** The last open membership question. Not
+      a duplicate the way `calibratedPlain` was, but it leans into the distance
+      cluster (87.5% midgame with `distance`, 90.4% with the departed
+      `calibratedPlain`) rather than away from it. Either drop it, or refit it
+      the way the slot above was refitted — and if refitting, do **not** take
+      the fit's top vector without checking agreement first.
 - [ ] **`calibratedCluster`'s fit found nothing.** The control vector won its
       round outright, which is either a real optimum or too small a search for
       two free weights. One re-run at higher `--candidates` settles it; leave the
@@ -115,10 +117,30 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       switched off is the one buying both. Either the fit was wrong about it or
       it pays only when it is not competing with `clustering` and
       `stragglerLag` — and those imply different answers about dropping it.
+
+      The `calibratedClusterJump` fit is a third data point and it favours the
+      second reading: given only `clustering` to compete with, all three
+      finalists put `jumpPotential` at 0.032-0.062. Every fit that has ever had
+      an alternative has discarded it; it wins only when it is the only shape
+      term on offer. The measurement that would settle it is an ablation on the
+      calibrated bot — drop the term, refit the rest, see what it costs.
+- [ ] **Measure whether a mixed teacher makes a broader clone.** This is the
+      next measurement, and it gates the one below. `scripts/pretrain.py` takes
+      `--expert` as a list, so the question is not *which* teacher but *which
+      mixture*: a clone learns its teacher's move distribution, so one strong
+      teacher gives a narrow clone however well it plays. Nobody has measured
+      whether mixing teachers actually broadens the clone or merely blurs it.
+      Candidate teacher set, being the axes that measurably differ:
+      `calibratedJump calibratedCluster calibratedClusterJump straggler` plus
+      `calibrated` as the strong anchor. Compare against a single-teacher clone
+      on both counts — strength against the panel, and move agreement with each
+      teacher, which `scripts/variantAgreement.py` does not yet do for a policy.
 - [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
-      of the exercise — Talos2 gets rebuilt from scratch on the new bots. Two
-      decisions belong to that moment and not before: which bot `scripts/pretrain.py`
-      clones from, and which of the calibrated family go into the opponent pool.
+      of the exercise — Talos2 gets rebuilt from scratch on the new bots. The
+      two decisions that belong to that moment are settled by the measurement
+      above and by the pool membership work: which teacher mixture
+      `scripts/pretrain.py` clones from, and which of the calibrated family go
+      into the opponent pool.
 
 ## Now
 

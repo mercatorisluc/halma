@@ -35,14 +35,13 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
         "stragglerLag": 0.166,
         "jumpPotential": 0.04,
     },
-    # Progress only: no shape terms at all, the leanest of the family.
-    "calibratedPlain": {
-        "distance": 1.0,
-        "home": 8.76,
-        "clustering": 0.0,
-        "stragglerLag": 0.0,
-        "jumpPotential": 0.0,
-    },
+    # `calibratedPlain` -- distance and home only, no shape terms -- was removed
+    # on 2026-08-21 and is not coming back. It agreed with `distance` on 91.4%
+    # of midgame positions and 97.5% of early ones, and won 48.0% against it,
+    # so both measures said the same thing: a bigger `home` weight is not a
+    # different bot. Its slot went to `calibratedClusterJump` below. Restore it
+    # from git if a lean control is ever wanted, but not for a pool.
+    #
     # One shape term each, so the three play visibly differently.
     "calibratedCluster": {
         "distance": 1.0,
@@ -64,6 +63,34 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
         "clustering": 0.0,
         "stragglerLag": 0.0,
         "jumpPotential": 0.316,
+    },
+    # The one pair, replacing `calibratedPlain`, which the 2026-08-21 agreement
+    # measurement found to be `distance` with a bigger `home` weight (91.4% of
+    # midgame positions) and therefore worth nothing to a pool that can hold
+    # `distance` itself. `clustering` and `jumpPotential` were picked as the two
+    # axes furthest apart in the panel.
+    #
+    # **These are not the weights the fit ranked first**, and that is deliberate.
+    # Its three finalists were statistically level -- 60.3 +/- 5.5, 56.3 +/- 5.6,
+    # 56.3 +/- 5.6 over 300 games -- so win rate did not separate them, and win
+    # rate is not what this variant is for. Move agreement did separate them, in
+    # the opposite order: the fit's winner agreed with `calibrated` on 83.0% of
+    # midgame positions, this one on 60.0%, and its highest agreement with
+    # anything is 63.2%. Adopting the strongest would have rebuilt the duplicate
+    # the variant exists to replace.
+    #
+    # The fit drove `jumpPotential` to 0.040 -- the same near-off value it chose
+    # for `calibrated` -- so this bot is cluster-driven in practice; the name
+    # records the term set that was searched, not two live terms. What makes it
+    # different from `calibratedCluster` is the weights, not the terms: 2.4x the
+    # clustering and 3.9x the home pull, which is enough that the two agree on
+    # only 29.9% of midgame positions.
+    "calibratedClusterJump": {
+        "distance": 1.0,
+        "home": 3.886,
+        "clustering": 0.316,
+        "stragglerLag": 0.0,
+        "jumpPotential": 0.040,
     },
 }
 

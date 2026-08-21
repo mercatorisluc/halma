@@ -486,17 +486,20 @@ The fitted weights, against a pool of `shaped` and `straggler`:
 | bot | distance | home | clustering | stragglerLag | jumpPotential |
 |---|---|---|---|---|---|
 | `calibrated` | 1.0 | 3.885 | 0.052 | 0.166 | 0.040 |
-| `calibratedPlain` | 1.0 | 8.760 | 0 | 0 | 0 |
 | `calibratedCluster` | 1.0 | 1.000 | 0.130 | 0 | 0 |
 | `calibratedLag` | 1.0 | 2.753 | 0 | 0.125 | 0 |
 | `calibratedJump` | 1.0 | 2.803 | 0 | 0 | 0.316 |
+| `calibratedClusterJump` | 1.0 | 3.886 | 0.316 | 0 | 0.040 |
+
+A sixth, `calibratedPlain` (`home` 8.760, no shape terms), was fitted at the
+same time and **removed on 2026-08-21** — see below, it was `distance` in a hat.
 
 **The headline is `home`.** `shaped` weights it 1.0 against the distance term;
-the fit wants 3.885, and 8.760 for the variant with no shape terms at all. That
-is the same finding as the 2026-08-14 rebuild — dropping the static distance
-half helped because it gave `unfilledTargetScore` a larger share — except that
-this says the share was still far too small. The three shape terms shrink
-correspondingly, `jumpPotential` most of all, to 0.040.
+the fit wants 3.885, and wanted 8.760 for the variant with no shape terms at
+all. That is the same finding as the 2026-08-14 rebuild — dropping the static
+distance half helped because it gave `unfilledTargetScore` a larger share —
+except that this says the share was still far too small. The three shape terms
+shrink correspondingly, `jumpPotential` most of all, to 0.040.
 
 Confirmed on fresh seeds, 300 games per pairing, none of them seen by the fit:
 
@@ -509,11 +512,10 @@ That is the bar the first fit failed: decisively ahead head to head *and* level
 against third parties, rather than a specialist. `calibrated` is now the
 strongest one-ply bot. Zero draws in all 1,800 games, so the fade held.
 
-The four partial variants are **not** meant to be strong — `calibratedPlain`
-wins 14% against the fit pool. They exist because `env/` trains against an
-opponent pool, and a pool of near-identical bots teaches an agent to beat one
-opponent. So the two questions that decide membership are whether they are
-*sound* and whether they are *different*, not how they rank.
+The partial variants are **not** meant to be strong. They exist because `env/`
+trains against an opponent pool, and a pool of near-identical bots teaches an
+agent to beat one opponent. So the two questions that decide membership are
+whether they are *sound* and whether they are *different*, not how they rank.
 
 #### The family is sound, and half of it is redundant
 
@@ -521,7 +523,7 @@ opponent. So the two questions that decide membership are whether they are
 draws in all 2,000 games**, average length 115–126 moves. Nothing in the family
 stalls, so nothing in it poisons a training pool. Against `distance`:
 
-| `calibratedJump` | `calibratedCluster` | `calibratedLag` | `calibratedPlain` |
+| `calibratedJump` | `calibratedCluster` | `calibratedLag` | `calibratedPlain` (since removed) |
 |---|---|---|---|
 | 83.0% (±5.2) | 80.0% (±5.5) | 74.0% (±6.1) | 48.0% (±6.9) |
 
@@ -559,18 +561,61 @@ and the shape terms have little to disagree about; late, `unfilledTargetScore`
 has faded them out by construction. Only in between are the pieces spread out
 enough for clustering, lag and jump potential to point different ways.
 
-What that leaves for the rebuild: `calibratedJump`, `calibratedCluster`, one of
-`calibrated`/`shaped`, and `straggler` (which agrees with the family only
-28.5–59.2%) span the space. `calibratedPlain` should be dropped or refitted into
-a shape the family does not already cover, and the obvious untried directions
-are *pairs* of shape terms — `clustering` with `jumpPotential` above all, being
-the two most distinct axes.
-
-There is also a tension here worth naming: the fit weighted `jumpPotential` down
-to 0.040, near off, yet the variant built on it is both the strongest partial and
+There is also a tension worth naming: the fit weighted `jumpPotential` down to
+0.040, near off, yet the variant built on it is both the strongest partial and
 the most distinctive player. Strength and distinctiveness are being bought by the
-same term the full bot nearly discards, which bears directly on the open question
-of what `jumpPotentialScore` is for.
+same term the full bot nearly discards, which bears on the open question of what
+`jumpPotentialScore` is for.
+
+#### Fitting for strength does not fit for a pool
+
+`calibratedPlain` was dropped and its slot fitted afresh over `clustering` +
+`jumpPotential`, the two axes furthest apart in the panel. The run is the reason
+this section exists as its own heading, because **the fit's own criterion picked
+the wrong bot** and the failure mode generalises to every pool member fitted
+from here on.
+
+Three finalists came out of the search statistically level over 300 games each —
+60.3% (±5.5), 56.3% (±5.6), 56.3% (±5.6) against the `shaped`/`straggler` pool.
+Win rate could not separate them. Move agreement separated them cleanly, and in
+the **opposite order**:
+
+| finalist | win rate | highest midgame agreement with any bot |
+|---|---|---|
+| `home` 9.655, `clu` 0.059 | 60.3% | **83.0%** (`calibrated`) |
+| `home` 5.986, `clu` 0.227 | 56.3% | 68.0% (`calibrated`) |
+| `home` 3.886, `clu` 0.316 | 56.3% | **63.2%** (`shaped`) |
+
+The nominal winner is a `home`-heavy, shape-terms-off vector — which is to say
+the search, left to maximise win rate, walked straight back to `calibratedPlain`
+and would have rebuilt the duplicate the slot was opened to remove. **In this
+panel win rate pulls towards `home`-heavy distance-like play**, so any fit whose
+fitness is win rate pulls pool members together rather than apart. The adopted
+vector is the third one, and adopting the least strong of a statistically tied
+set is not a concession here: the pool wants coverage, and the strength floor is
+soundness, not rank.
+
+It cost nothing anyway. Confirmed at 200 games per pairing on seeds the fit never
+saw, **zero draws in 2,000 games**:
+
+| `calibratedClusterJump` vs | `distance` | `calibratedCluster` | `calibratedJump` | `calibrated` |
+|---|---|---|---|---|
+| | 81.0% (±5.4) | 70.5% (±6.3) | 51.5% (±6.9) | 48.0% (±6.9) |
+
+Level with `calibrated`, the strongest one-ply bot in the panel, while agreeing
+with nothing above 63.2%. Note also that it is a *second* cluster bot — the fit
+drove `jumpPotential` to 0.040 again, so the name records the term set searched
+rather than two live terms — and yet it agrees with `calibratedCluster` on only
+29.9% of midgame positions. Two bots built on the same single term play almost
+entirely differently at 2.4x the clustering weight and 3.9x the home pull, which
+is worth remembering before assuming the term set is what makes a variant
+distinct. It is the weights.
+
+What that leaves spanning the space: `calibratedJump`, `calibratedCluster`,
+`calibratedClusterJump`, one of `calibrated`/`shaped`, and `straggler` (which
+agrees with the family only 28.5–59.2%). `calibratedLag` is the remaining
+question — not a duplicate the way `calibratedPlain` was, but leaning into the
+distance cluster at 87.5% rather than away from it.
 
 ### `visual/` — the pygame front-end
 
