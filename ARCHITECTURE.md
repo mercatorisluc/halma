@@ -512,8 +512,65 @@ strongest one-ply bot. Zero draws in all 1,800 games, so the fade held.
 The four partial variants are **not** meant to be strong — `calibratedPlain`
 wins 14% against the fit pool. They exist because `env/` trains against an
 opponent pool, and a pool of near-identical bots teaches an agent to beat one
-opponent. Whether they actually play *differently* rather than merely worse is
-not yet measured; the move-agreement mechanism above is what would answer it.
+opponent. So the two questions that decide membership are whether they are
+*sound* and whether they are *different*, not how they rank.
+
+#### The family is sound, and half of it is redundant
+
+**Sound**, measured 2026-08-21 at 200 games per pairing on unseen seeds: **zero
+draws in all 2,000 games**, average length 115–126 moves. Nothing in the family
+stalls, so nothing in it poisons a training pool. Against `distance`:
+
+| `calibratedJump` | `calibratedCluster` | `calibratedLag` | `calibratedPlain` |
+|---|---|---|---|
+| 83.0% (±5.2) | 80.0% (±5.5) | 74.0% (±6.1) | 48.0% (±6.9) |
+
+**Different is where it falls down.** `scripts/variantAgreement.py` measures
+pairwise move agreement over a shared position set — 1,500 positions sampled
+from the family's own games, each reduced to the feature matrix that makes
+scoring a weight vector one multiply. Agreement counts a shared *best set*
+rather than an identical move, because `bestMove` breaks ties at random.
+
+Two results, both about the middle of the game (see below for why that bucket):
+
+- **`calibratedPlain` is `distance` wearing a different hat.** They agree on
+  **91.4%** of midgame positions and 97.5% early, and the win rate said the same
+  thing from the other side — 48.0% is a coin flip. With no shape terms it is
+  `distance` plus a fitted `home` weight, and 8.760 is a big enough weight to
+  reorder some moves but not to make a different bot. It adds nothing to a pool
+  that could hold `distance` itself.
+- **`calibratedJump` is the genuine outlier**, and the strongest partial besides.
+  It agrees with nothing: 32.4% with `distance`, 18.0% with `calibratedCluster`,
+  45.6% with `calibrated`. `calibratedCluster` is the second most distinct
+  (34.5–47.1%). Those two are the pool's real content.
+
+`calibratedLag` sits with `calibratedPlain` and `distance` in one cluster (90.4%
+and 87.5%), and `calibrated` agrees with `shaped` 80.3% — expected, since it is
+`shaped`'s weights transplanted, but it means a pool should hold one of them and
+not both. Read against the tie sizes the script prints: `calibratedPlain` and
+`distance` leave 2.65 and 2.66 candidates of 69 tied for best, the highest in
+the panel, which puts chance agreement near 10% rather than anywhere near 90%.
+
+**The midgame is the discriminating bucket**, which the fade argument alone
+would not predict — the family agrees *more* early than in the middle
+(`calibratedCluster` against `calibrated`: 65.1% early, 37.0% middle, 58.9%
+late). Early, every candidate is some way of advancing a packed home triangle
+and the shape terms have little to disagree about; late, `unfilledTargetScore`
+has faded them out by construction. Only in between are the pieces spread out
+enough for clustering, lag and jump potential to point different ways.
+
+What that leaves for the rebuild: `calibratedJump`, `calibratedCluster`, one of
+`calibrated`/`shaped`, and `straggler` (which agrees with the family only
+28.5–59.2%) span the space. `calibratedPlain` should be dropped or refitted into
+a shape the family does not already cover, and the obvious untried directions
+are *pairs* of shape terms — `clustering` with `jumpPotential` above all, being
+the two most distinct axes.
+
+There is also a tension here worth naming: the fit weighted `jumpPotential` down
+to 0.040, near off, yet the variant built on it is both the strongest partial and
+the most distinctive player. Strength and distinctiveness are being bought by the
+same term the full bot nearly discards, which bears directly on the open question
+of what `jumpPotentialScore` is for.
 
 ### `visual/` — the pygame front-end
 

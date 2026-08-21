@@ -73,20 +73,26 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       of sweeping them**. Both done, both in ARCHITECTURE.md.
 - [x] **Confirm `calibrated` on fresh seeds.** Done: 73.7% (±5.0) against
       `shaped`, and level with it against third parties. Adopted.
-- [ ] **The four partial variants have not been confirmed**, only `calibrated`
-      has. Their fitness numbers come from a search and are selection-biased.
-      They are not meant to be strong, so the question is not their win rate but
-      whether they are *sound* — a variant that stalls in the endgame would
-      poison a training pool. Check draws first: `python -m scripts.baseline
-      --bots calibratedPlain calibratedCluster calibratedLag calibratedJump
-      distance --games 200 --seed 20000 --jobs 8`.
-- [ ] **Check the family is actually diverse, not just differently strong.**
-      They exist to be an opponent pool for `env/`, and a pool of bots that pick
-      the same move 95% of the time teaches an agent to beat one opponent. The
-      measurement is pairwise move agreement over a fixed position set — same
-      mechanism as the `lookahead2` diagnostic in `scripts/fitWeights.py`, which
-      is where the 98% figure for `straggler` came from. If two variants are
-      near-duplicates, drop one and fit a differently-shaped one instead.
+- [x] **The four partial variants have not been confirmed.** Answered: all four
+      are sound — zero draws in 2,000 games, normal lengths. Written up.
+- [x] **Check the family is actually diverse.** Answered by
+      `scripts/variantAgreement.py`, and half the family fails it:
+      `calibratedPlain` agrees with `distance` on 91.4% of midgame positions,
+      `calibratedLag` sits in the same cluster, and `calibrated` agrees with
+      `shaped` 80.3%. `calibratedJump` and `calibratedCluster` are the two real
+      axes. All in ARCHITECTURE.md.
+- [ ] **Replace `calibratedPlain` with a variant the family does not already
+      cover.** It is `distance` with a bigger `home` weight, on both measures.
+      The untried directions are *pairs* of shape terms, and the pair worth
+      fitting first is `clustering` + `jumpPotential` — the two most distinct
+      axes in the panel. `fitWeights.py` already handles this: a variant is
+      nothing but a weight vector and `activeTerms` searches whatever is
+      non-zero, so it needs a new entry in `CALIBRATED_VARIANTS` and a run.
+- [ ] **Decide `calibratedLag`'s fate** once the pair-variant exists. It is not
+      a duplicate the way `calibratedPlain` is (79.8% early, 90.4% midgame
+      against it), but it leans into the distance cluster rather than away from
+      it. Worth keeping only if the pool still needs a fourth member after the
+      replacement above.
 - [ ] **`calibratedCluster`'s fit found nothing.** The control vector won its
       round outright, which is either a real optimum or too small a search for
       two free weights. One re-run at higher `--candidates` settles it; leave the
@@ -102,6 +108,13 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       dropping it costs the calibrated bot. Removing it makes `shaped` a third
       cheaper, which is what stands between it and being `lookahead2`'s leaf or
       `pretrain`'s teacher.
+
+      **2026-08-21 makes this sharper, not softer.** `calibratedJump` is both the
+      strongest partial variant (83.0% against `distance`) and by a wide margin
+      the most distinctive player in the panel. The term the full fit nearly
+      switched off is the one buying both. Either the fit was wrong about it or
+      it pays only when it is not competing with `clustering` and
+      `stragglerLag` — and those imply different answers about dropping it.
 - [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
       of the exercise — Talos2 gets rebuilt from scratch on the new bots. Two
       decisions belong to that moment and not before: which bot `scripts/pretrain.py`
