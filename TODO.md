@@ -28,6 +28,10 @@ that share one scoring function and differ only in their weight vector —
 `scripts/fitWeights.py` against an opponent pool. The measurements are in
 ARCHITECTURE.md; what is left is below under "Calibration: what is left".
 
+**Where to pick up (2026-08-22):** the panel is frozen and the teacher
+measurement is half-run — see the `[~]` item under "Calibration: what is left".
+That is the thread to resume.
+
 **2026-08-21: the panel is frozen at four bots.** `calibrated`,
 `calibratedCluster`, `calibratedJump` and `calibratedClusterJump`. Two variants
 were removed for duplicating `distance` rather than for being weak, one was
@@ -148,17 +152,39 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
       an alternative has discarded it; it wins only when it is the only shape
       term on offer. The measurement that would settle it is an ablation on the
       calibrated bot — drop the term, refit the rest, see what it costs.
-- [ ] **Measure whether a mixed teacher makes a broader clone.** This is the
-      next measurement, and it gates the one below. `scripts/pretrain.py` takes
+- [~] **Measure whether a mixed teacher makes a broader clone.** Running as of
+      2026-08-22 00:15, and it gates the item below. `scripts/pretrain.py` takes
       `--expert` as a list, so the question is not *which* teacher but *which
       mixture*: a clone learns its teacher's move distribution, so one strong
       teacher gives a narrow clone however well it plays. Nobody has measured
       whether mixing teachers actually broadens the clone or merely blurs it.
-      Candidate teacher set, being the axes that measurably differ:
-      `calibratedJump calibratedCluster calibratedClusterJump straggler` plus
-      `calibrated` as the strong anchor. Compare against a single-teacher clone
-      on both counts — strength against the panel, and move agreement with each
-      teacher, which `scripts/variantAgreement.py` does not yet do for a policy.
+
+      **Arm 1 is done and saved**, `models/teacherSingle.zip`, cloned from
+      `calibrated` alone at 150k samples / 12 epochs / seed 0. It ended at 78.0%
+      agreement with its teacher, still rising at the last epoch, and scored
+      78.0% argmax against both `distance` and `shaped`, 82.0% against `random`.
+      Sampled play is its weak side, 16.0% against `shaped` — the same profile
+      the 150k clone of 2026-08-09 had.
+
+      **Arm 2 was collecting when the session ended.** Same budget and seed,
+      five teachers. If it did not survive, rerun exactly:
+      ```
+      python -u -m scripts.pretrain --samples 150000 --epochs 12 --seed 0 \
+          --expert calibrated calibratedCluster calibratedJump \
+          calibratedClusterJump straggler --name teacherMixed > teacherMixed.log
+      ```
+      Then compare on two axes. Strength: `scripts.evaluateAgainstBots` on both
+      checkpoints. Breadth: `scripts/teacherAgreement.py`, written for this and
+      not yet run against anything —
+      ```
+      python -u -m scripts.teacherAgreement models/teacherSingle models/teacherMixed \
+          --teachers calibrated calibratedCluster calibratedJump \
+          calibratedClusterJump straggler
+      ```
+      **Read the minimum, not the mean.** A clone that copies one teacher and
+      ignores the rest scores the same mean as one covering all five; only the
+      per-teacher minimum separates broad from collapsed. Low on all is the
+      third outcome, blurred, and it is the real risk of mixing.
 - [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
       of the exercise — Talos2 gets rebuilt from scratch on the new bots. The
       two decisions that belong to that moment are settled by the measurement
