@@ -24,9 +24,17 @@ Every primitive now maps onto [0, 1] through its own measured distribution
 (`heuristics/calibration.py`), so a weight is a weight rather than an accident
 of whatever divisor a primitive carried. On top of that sits a family of bots
 that share one scoring function and differ only in their weight vector —
-`calibrated` plus four deliberately partial members, fitted by
+`calibrated` plus deliberately partial members, fitted by
 `scripts/fitWeights.py` against an opponent pool. The measurements are in
 ARCHITECTURE.md; what is left is below under "Calibration: what is left".
+
+**2026-08-21: the panel is frozen at four bots.** `calibrated`,
+`calibratedCluster`, `calibratedJump` and `calibratedClusterJump`. Two variants
+were removed for duplicating `distance` rather than for being weak, one was
+fitted to replace them, and the measurement that decides membership is now move
+agreement rather than win rate — `scripts/variantAgreement.py`. What the pool
+cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
+"Diversity is bounded by playability". Next up is the teacher measurement.
 
 ## The panel moved — decide what that costs
 
@@ -77,10 +85,10 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       are sound — zero draws in 2,000 games, normal lengths. Written up.
 - [x] **Check the family is actually diverse.** Answered by
       `scripts/variantAgreement.py`, and half the family fails it:
-      `calibratedPlain` agrees with `distance` on 91.4% of midgame positions,
-      `calibratedLag` sits in the same cluster, and `calibrated` agrees with
-      `shaped` 80.3%. `calibratedJump` and `calibratedCluster` are the two real
-      axes. All in ARCHITECTURE.md.
+      `calibratedPlain` agreed with `distance` on 91.4% of midgame positions and
+      `calibratedLag` sat in the same cluster — both since removed — and
+      `calibrated` agrees with `shaped` 80.3%. `calibratedJump` and
+      `calibratedCluster` are the two real axes. All in ARCHITECTURE.md.
 - [x] **Replace `calibratedPlain`.** Done: it is removed, and
       `calibratedClusterJump` has its slot — sound, 48.0% against `calibrated`,
       and agreeing with nothing above 63.2%. The run also produced the finding
@@ -89,12 +97,28 @@ ARCHITECTURE.md; what is left is below under "Calibration: what is left".
       The fit's own winner was the least distinct of three tied finalists.
       Written up in ARCHITECTURE.md under "Fitting for strength does not fit
       for a pool".
-- [ ] **Decide `calibratedLag`'s fate.** The last open membership question. Not
-      a duplicate the way `calibratedPlain` was, but it leans into the distance
-      cluster (87.5% midgame with `distance`, 90.4% with the departed
-      `calibratedPlain`) rather than away from it. Either drop it, or refit it
-      the way the slot above was refitted — and if refitting, do **not** take
-      the fit's top vector without checking agreement first.
+- [x] **Decide `calibratedLag`'s fate.** Removed. It leaned into the distance
+      cluster (87.5% midgame) rather than away from it, so it added no coverage.
+      A verdict on the vector, not on `stragglerLagScore`, which stays in
+      `calibrated`. **The panel is now frozen**: `calibrated`, `calibratedCluster`,
+      `calibratedJump`, `calibratedClusterJump`.
+- [x] **Would a bot per primitive widen the pool?** Answered: no. Single-term
+      bots have no drive to the target — 0.0% against `distance`, and 12/12
+      draws at the move ceiling when played against each other. Even a bot that
+      keeps `distance` at 1.0 but weights a shape term 3.0 stalls 12/12. Written
+      up in ARCHITECTURE.md as "Diversity is bounded by playability".
+- [ ] **Buy diversity at the episode level instead.** Follows from the above:
+      every sound vector in this family has to be distance-dominated, so
+      reweighting has a ceiling and the pool is close to it. The untried levers
+      are outside the bots — `--opponentSampling` (already implemented, used
+      once in `progressivePhase2`) and varied openings (see the plausible-
+      opening-plies idea; uniform random openings were measured once and did not
+      help). Neither has been measured *for diversity*, only for strength.
+- [ ] **Or add a genuinely new primitive.** The other way past the bound. The
+      five terms are all some flavour of progress-or-shape; nothing scores
+      blocking, tempo, or the opponent's position at all. That is a bigger piece
+      of work than a refit and should follow the teacher measurement, not
+      precede it.
 - [ ] **`calibratedCluster`'s fit found nothing.** The control vector won its
       round outright, which is either a real optimum or too small a search for
       two free weights. One re-run at higher `--candidates` settles it; leave the

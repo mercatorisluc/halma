@@ -42,7 +42,7 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
     # different bot. Its slot went to `calibratedClusterJump` below. Restore it
     # from git if a lean control is ever wanted, but not for a pool.
     #
-    # One shape term each, so the three play visibly differently.
+    # One shape term each, so they play visibly differently.
     "calibratedCluster": {
         "distance": 1.0,
         "home": 1.0,
@@ -50,13 +50,13 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
         "stragglerLag": 0.0,
         "jumpPotential": 0.0,
     },
-    "calibratedLag": {
-        "distance": 1.0,
-        "home": 2.753,
-        "clustering": 0.0,
-        "stragglerLag": 0.125,
-        "jumpPotential": 0.0,
-    },
+    # `calibratedLag` -- `stragglerLag` as the only shape term -- was removed on
+    # 2026-08-21 for the same reason as `calibratedPlain`, one step milder: it
+    # agreed with `distance` on 87.5% of midgame positions and with
+    # `calibratedPlain` on 90.4%, so it sat in the distance cluster rather than
+    # away from it and added no coverage a pool did not already have. That is a
+    # verdict on this weight vector, not on `stragglerLagScore`, which stays in
+    # `calibrated` at 0.166 and is worth 24.5% to `shaped` when ablated.
     "calibratedJump": {
         "distance": 1.0,
         "home": 2.803,

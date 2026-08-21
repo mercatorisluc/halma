@@ -487,12 +487,13 @@ The fitted weights, against a pool of `shaped` and `straggler`:
 |---|---|---|---|---|---|
 | `calibrated` | 1.0 | 3.885 | 0.052 | 0.166 | 0.040 |
 | `calibratedCluster` | 1.0 | 1.000 | 0.130 | 0 | 0 |
-| `calibratedLag` | 1.0 | 2.753 | 0 | 0.125 | 0 |
 | `calibratedJump` | 1.0 | 2.803 | 0 | 0 | 0.316 |
 | `calibratedClusterJump` | 1.0 | 3.886 | 0.316 | 0 | 0.040 |
 
-A sixth, `calibratedPlain` (`home` 8.760, no shape terms), was fitted at the
-same time and **removed on 2026-08-21** — see below, it was `distance` in a hat.
+Two more were fitted at the same time and **removed on 2026-08-21**, both for
+duplicating `distance` rather than for being weak: `calibratedPlain` (`home`
+8.760, no shape terms) and `calibratedLag` (`home` 2.753, `stragglerLag` 0.125).
+See below.
 
 **The headline is `home`.** `shaped` weights it 1.0 against the distance term;
 the fit wants 3.885, and wanted 8.760 for the variant with no shape terms at
@@ -547,7 +548,11 @@ Two results, both about the middle of the game (see below for why that bucket):
   (34.5–47.1%). Those two are the pool's real content.
 
 `calibratedLag` sits with `calibratedPlain` and `distance` in one cluster (90.4%
-and 87.5%), and `calibrated` agrees with `shaped` 80.3% — expected, since it is
+and 87.5%) and **was removed for it on 2026-08-21**, one step milder than
+`calibratedPlain` but for the same reason — it added no coverage the pool did
+not already have. That is a verdict on the weight vector and not on
+`stragglerLagScore`, which stays in `calibrated` and is worth 24.5% to `shaped`
+when ablated. `calibrated` agrees with `shaped` 80.3% — expected, since it is
 `shaped`'s weights transplanted, but it means a pool should hold one of them and
 not both. Read against the tie sizes the script prints: `calibratedPlain` and
 `distance` leave 2.65 and 2.66 candidates of 69 tied for best, the highest in
@@ -613,9 +618,46 @@ distinct. It is the weights.
 
 What that leaves spanning the space: `calibratedJump`, `calibratedCluster`,
 `calibratedClusterJump`, one of `calibrated`/`shaped`, and `straggler` (which
-agrees with the family only 28.5–59.2%). `calibratedLag` is the remaining
-question — not a duplicate the way `calibratedPlain` was, but leaning into the
-distance cluster at 87.5% rather than away from it.
+agrees with the family only 28.5–59.2%).
+
+#### Diversity is bounded by playability, and the bound is tight
+
+The obvious way to widen a pool is a bot per primitive — one that scores only
+`clustering`, one only `jumpPotential`. Measured on 2026-08-21, that does not
+work, and the boundary it runs into is worth knowing before anyone designs
+another variant.
+
+| against `distance`, 40 games | win% | draws | avg moves |
+|---|---|---|---|
+| `clustering` only | 0.0% | 0 | 141 |
+| `jumpPotential` only | 0.0% | 0 | 135 |
+| `stragglerLag` only | 0.0% | 0 | 142 |
+| `home` only | 0.0% | 0 | 128 |
+| `distance` 1.0, `home` 0.1, `clustering` 3.0 | 0.0% | 1 | 145 |
+| `calibratedCluster` (control) | 95.0% | 0 | 121 |
+
+**The zero draws are not a clean bill of health** — the opponent is ending those
+games. Played against each other, where nobody drives towards the target, the
+same bots stall completely: `clustering`-only against `jumpPotential`-only draws
+**12 of 12 at the 250-move ceiling**, and so does either against itself.
+
+The third-from-last row is the one that generalises. That bot *has* a distance
+term, weighted 1.0, and it still stalls 12 of 12 against itself — a shape weight
+of 3.0 simply outvotes it. So the constraint is not "keep some distance term"
+but a ratio, and the sound region is narrow: `calibratedCluster` carries 0.13
+against `home` 1.0 and wins 95%. This is the same cliff `SHAPE_WEIGHT` records
+from the other side (0.16 → 79.3%, 0.20 → 23.7%, 0.30 → 4.5%) and the same
+failure the fade was introduced to fix, when `shaped` hung in 37 games of 40.
+
+The consequence for pool design is a real limit rather than a caution. **Every
+sound weight vector has to be distance-dominated, so every sound bot in this
+family is somewhat distance-like**, and that — not just the win-rate fitness
+above — is why fitted variants keep collapsing towards `distance`. There is
+still room inside the bound, as the 29.9% between the two cluster bots shows,
+but it is room and not open space. Widening the pool further wants one of:
+a genuinely new primitive rather than a reweighting of these five; or diversity
+bought at the episode level instead of the bot level, where `--opponentSampling`
+and varied openings already offer more spread than any reweighting can.
 
 ### `visual/` — the pygame front-end
 
