@@ -572,6 +572,35 @@ the most distinctive player. Strength and distinctiveness are being bought by th
 same term the full bot nearly discards, which bears on the open question of what
 `jumpPotentialScore` is for.
 
+#### It is the shape terms that separate them, not the `home` spread
+
+Every member carries a large `home` weight — 1.0 to 3.886, the biggest term in
+each vector — which invites the worry that the family is one slider rather than a
+space, and that the low agreement numbers come from that spread rather than from
+the shape terms. Measured 2026-08-21 by pairing each bot with a **twin** that
+keeps its distance and `home` weights and zeroes every shape term. Midgame:
+
+| | real bots | their twins |
+|---|---|---|
+| `calibrated` vs `calibratedClusterJump` | 53.6% | **100.0%** |
+| `calibratedJump` vs `calibratedClusterJump` | 53.0% | **96.0%** |
+| `calibratedCluster` vs `calibratedJump` | 16.8% | 54.2% |
+
+The first row is the cleanest case and doubles as the control: those two weight
+`home` at 3.885 and 3.886, so their twins *are* the same bot and duly agree
+100%. The real bots disagree on 46% of midgame moves, and every point of that is
+the shape terms. Against its own twin each bot scores 78.1% (`calibrated`),
+65.4% (`calibratedCluster`), 48.8% (`calibratedJump`) and 48.0%
+(`calibratedClusterJump`) — so for the last two the shape term decides the move
+about half the time. They are not decoration on a shared distance bot.
+
+The twins carry a design fact of their own: at `home` 2.803, 3.885 and 3.886
+they agree 96–100%, and only `calibratedCluster`'s 1.0 sits anywhere else (52.4%
+against the rest). **The upper `home` band is a flat region** — moving the weight
+around inside it buys no distinctiveness at all, which is worth knowing before
+fitting another variant that lands there. Diversity through `home` means going
+low, not varying between 2.8 and 3.9.
+
 #### Fitting for strength does not fit for a pool
 
 `calibratedPlain` was dropped and its slot fitted afresh over `clustering` +
