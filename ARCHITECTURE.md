@@ -1887,6 +1887,83 @@ both recorded because the second is load-bearing:
 epoch *and* after 300 evaluation games, which for an 80-minute fit is a long
 way to fall.
 
+### A mixed teacher does not make a broader clone
+
+Measured 2026-08-22, and it is the measurement that decides what
+`scripts/pretrain.py` should clone from. Two arms at an identical budget — 150k
+samples, 12 epochs, seed 0 — differing only in `--expert`:
+
+- `models/teacherSingle`, cloned from `calibrated` alone
+- `models/teacherMixed`, cloned from `calibrated calibratedCluster
+  calibratedJump calibratedClusterJump straggler`
+
+A clone learns its teacher's move distribution, so one strong teacher should
+give a narrow clone however well it plays. That is the premise, and it did not
+survive contact.
+
+**Breadth.** `scripts/teacherAgreement.py`, per-teacher argmax agreement over
+1,500 shared positions. The average `pretrain` prints cannot answer this — a
+clone that copies one teacher and ignores four scores the same average as one
+covering all five — so the number to read is the **minimum**.
+
+| teacher | `teacherSingle` | `teacherMixed` |
+|---|---|---|
+| `calibrated` | 71.5% | 60.6% |
+| `calibratedCluster` | 44.5% | 50.1% |
+| `calibratedJump` | 43.7% | 40.7% |
+| `calibratedClusterJump` | 51.4% | 47.5% |
+| `straggler` | 42.4% | 42.2% |
+| **minimum** | **42.4%** | **40.7%** |
+
+Level to slightly worse. What the mixture did was flatten the profile — 10.9
+points given up on `calibrated`, 5.6 gained on `calibratedCluster`, everything
+else inside the noise. That is redistribution, not breadth.
+
+**The reason is the panel, not the method.** The single-teacher clone already
+agrees 42–51% with four teachers it never saw. Every sound bot in this family
+has to be distance-dominated — see "Diversity is bounded by playability" — so
+imitating one already captures most of what the others do, and there is little
+breadth left at the level of individual moves for a mixture to buy.
+
+**Strength**, 100 games per bot per mode, seed 80000:
+
+| | vs `distance` | vs `shaped` | vs `calibrated` | vs `calibratedJump` |
+|---|---|---|---|---|
+| `teacherSingle` sampled | **61.0 ± 9.6** | **21.0 ± 8.0** | **18.0 ± 7.5** | **23.0 ± 8.2** |
+| `teacherMixed` sampled | 49.0 ± 9.8 | 16.0 ± 7.2 | 11.0 ± 6.1 | 10.0 ± 5.9 |
+| `teacherSingle` argmax | 88.0 | 76.0 | 100.0 | 31.0 |
+| `teacherMixed` argmax | 68.0 | 100.0 | 100.0 | 30.0 |
+
+Four of four sampled comparisons favour the single-teacher clone, two of them
+outside the margins. **At equal budget the mixture bought nothing on either
+axis**, so `pretrain` should keep cloning one bot, and `calibrated` is the one
+to clone.
+
+Two things stop that being the last word. Both clones were still improving at
+epoch 12, and fitting five teachers is the harder problem, so an equal budget
+is not an equal opportunity — equal *cost* is the right comparison for choosing
+today, but the question itself deserves a 500k rerun. And the mixed clone's one
+clear argmax win, 100-0 against `shaped` where the single clone went 76, is
+real but rests on very few distinct games.
+
+#### Read argmax margins with suspicion
+
+That last point generalises and is worth stating on its own, because it applies
+to every argmax number in this document. **Against a heuristic, argmax play is
+very nearly deterministic**: the policy has no randomness, the bot has none
+either bar tie-breaks, and only the seat draw varies. Counted directly, 30
+argmax games against `calibrated` produced **5 distinct game lengths**, and 30
+against `calibratedJump` produced 10.
+
+So a 100-game argmax result is not 100 independent trials, and the binomial
+margin that `evaluate` prints is far too tight — three cells above read
+`100.0 ± 0.0`, which really means "won all of about five distinct lines". The
+sampled column does not have this problem, since sampling varies every game,
+which is a second reason to weigh it as heavily as the docstring of
+`scripts/evaluateAgainstBots.py` already suggests for mid-training policies.
+Nothing here is wrong, but a confident-looking argmax margin against a
+deterministic opponent is measuring reproducibility as much as strength.
+
 ### Stage 3, the generation-2 league: five rounds, +70.5% over its own anchor
 
 `scripts/talos2League.py`, five 300k rounds of checkpoint-only self-play from

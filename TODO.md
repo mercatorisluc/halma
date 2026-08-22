@@ -28,9 +28,12 @@ that share one scoring function and differ only in their weight vector —
 `scripts/fitWeights.py` against an opponent pool. The measurements are in
 ARCHITECTURE.md; what is left is below under "Calibration: what is left".
 
-**Where to pick up (2026-08-22):** the panel is frozen and the teacher
-measurement is half-run — see the `[~]` item under "Calibration: what is left".
-That is the thread to resume.
+**Where to pick up (2026-08-22):** the panel is frozen at four bots and the
+teacher question is answered — one teacher, `calibrated`, since the mixture
+bought nothing on breadth or strength at equal budget. What stands between here
+and the rebuild is the 500k rerun of that comparison, which is the first item
+under "Calibration: what is left" that is still open. Everything else in this
+file predates the panel freeze and should be read with that in mind.
 
 **2026-08-21: the panel is frozen at four bots.** `calibrated`,
 `calibratedCluster`, `calibratedJump` and `calibratedClusterJump`. Two variants
@@ -152,46 +155,23 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
       an alternative has discarded it; it wins only when it is the only shape
       term on offer. The measurement that would settle it is an ablation on the
       calibrated bot — drop the term, refit the rest, see what it costs.
-- [~] **Measure whether a mixed teacher makes a broader clone.** Running as of
-      2026-08-22 00:15, and it gates the item below. `scripts/pretrain.py` takes
-      `--expert` as a list, so the question is not *which* teacher but *which
-      mixture*: a clone learns its teacher's move distribution, so one strong
-      teacher gives a narrow clone however well it plays. Nobody has measured
-      whether mixing teachers actually broadens the clone or merely blurs it.
-
-      **Arm 1 is done and saved**, `models/teacherSingle.zip`, cloned from
-      `calibrated` alone at 150k samples / 12 epochs / seed 0. It ended at 78.0%
-      agreement with its teacher, still rising at the last epoch, and scored
-      78.0% argmax against both `distance` and `shaped`, 82.0% against `random`.
-      Sampled play is its weak side, 16.0% against `shaped` — the same profile
-      the 150k clone of 2026-08-09 had.
-
-      **Arm 2 is done too**, `models/teacherMixed.zip`, same budget and seed,
-      five teachers, ending at 60.5% averaged agreement against arm 1's 78.0%
-      on its single teacher.
-
-      **Breadth: the mixed teacher did not deliver it.** Per-teacher argmax
-      agreement over 1,500 shared positions, `teacherSingle` then
-      `teacherMixed`: `calibrated` 71.5 / 60.6, `calibratedCluster` 44.5 / 50.1,
-      `calibratedJump` 43.7 / 40.7, `calibratedClusterJump` 51.4 / 47.5,
-      `straggler` 42.4 / 42.2. Mean 50.7 / 48.2, **minimum 42.4 / 40.7**. The
-      pre-registered criterion was a minimum well above the single-teacher
-      clone's, and it is level-to-worse. What the mixture did was flatten the
-      profile — it gave up 10.9 points on `calibrated` to gain 5.6 on
-      `calibratedCluster` — which is redistribution, not breadth.
-
-      Strength is still to come; `scripts.evaluateAgainstBots` at 100 games over
-      `distance shaped calibrated calibratedJump`, seed 80000, was running when
-      this was written, into `teacherStrength.log`. It matters because the two
-      arms' 50-game closing evaluations disagree with the breadth reading:
-      `teacherMixed` beat `shaped` 50-0 at argmax where `teacherSingle` went
-      39-11. Do not write the conclusion up until that lands.
-
-      **Caveat that belongs in the write-up either way:** both clones were still
-      improving at epoch 12, and the mixed teacher is the harder fitting problem
-      of the two, so an equal *budget* is not an equal *opportunity*. Equal cost
-      is the fair comparison for choosing today; a 500k rerun is the fair
-      comparison for the question itself.
+- [x] **Measure whether a mixed teacher makes a broader clone.** Answered: no,
+      on both axes and at equal budget. Breadth minimum 42.4% (single) against
+      40.7% (mixed); all four sampled strength comparisons favour the single
+      clone, two outside the margins. So `pretrain` keeps one teacher, and
+      `calibrated` is it. Both arms are on disk as `models/teacherSingle` and
+      `models/teacherMixed`. Written up in ARCHITECTURE.md, along with the
+      methodological finding that came out of it — argmax margins against a
+      deterministic bot are far too tight, because 30 argmax games produce only
+      about 5 distinct game lines.
+- [ ] **Rerun the teacher comparison at 500k before the rebuild commits to it.**
+      The result above is at equal *cost*, which is the right basis for choosing
+      today, but not for the question itself: both clones were still improving
+      at epoch 12 and fitting five teachers is the harder problem, so the
+      mixture was the more data-starved arm. 500k is the budget the recorded
+      generation-2 clone used and the one the rebuild will use anyway. Cheap to
+      decide against — if the minimum still does not move, the question is
+      closed for good.
 - [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
       of the exercise — Talos2 gets rebuilt from scratch on the new bots. The
       two decisions that belong to that moment are settled by the measurement
