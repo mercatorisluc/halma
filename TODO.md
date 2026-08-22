@@ -28,20 +28,27 @@ that share one scoring function and differ only in their weight vector —
 `scripts/fitWeights.py` against an opponent pool. The measurements are in
 ARCHITECTURE.md; what is left is below under "Calibration: what is left".
 
-**Where to pick up (2026-08-22):** the panel is frozen at four bots and the
-teacher question is answered — one teacher, `calibrated`, since the mixture
-bought nothing on breadth or strength at equal budget. What stands between here
-and the rebuild is the 500k rerun of that comparison, which is the first item
-under "Calibration: what is left" that is still open. Everything else in this
-file predates the panel freeze and should be read with that in mind.
-
 **2026-08-21: the panel is frozen at four bots.** `calibrated`,
 `calibratedCluster`, `calibratedJump` and `calibratedClusterJump`. Two variants
 were removed for duplicating `distance` rather than for being weak, one was
 fitted to replace them, and the measurement that decides membership is now move
 agreement rather than win rate — `scripts/variantAgreement.py`. What the pool
 cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
-"Diversity is bounded by playability". Next up is the teacher measurement.
+"Diversity is bounded by playability".
+
+**2026-08-22: the clone copies one teacher, and it is `calibrated`.** A mixture
+of five was measured against it at equal budget and bought nothing — breadth
+minimum 40.7% against 42.4%, and all four sampled strength comparisons the
+other way. `scripts/teacherAgreement.py` is the measurement. The same run
+turned up a caveat that colours every argmax number in ARCHITECTURE.md: against
+a deterministic bot, 30 argmax games produce about 5 distinct game lines, so
+those margins are far too tight.
+
+**Where to pick up:** everything blocking the rebuild is now decided — panel,
+pool, teacher. What is left before committing to it is the 500k rerun of the
+teacher comparison, under "Calibration: what is left", and then the rebuild
+itself. Items above that section predate the panel freeze and should be read
+with that in mind.
 
 ## The panel moved — decide what that costs
 
@@ -52,12 +59,12 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
       Either re-measure that one pairing and restate the comparison, or state in
       ARCHITECTURE.md that generation-1-vs-2 is frozen at the old panel. Doing
       neither leaves two incomparable numbers side by side.
-- [ ] **Reconsider what `scripts/pretrain.py` clones from.** It clones
-      `distance`, and two bots in the panel now beat it — `shaped` 92.0% and
-      `straggler` ~80%. The clone is the root of every Talos lineage, so the
-      teacher is not a detail. `shaped` is 45x the cost per candidate, which is
-      the reason to measure rather than assume: sample generation is already the
-      slow part of pretraining.
+- [ ] **Move `scripts/pretrain.py`'s default teacher off `distance`.** The
+      2026-08-22 measurement settled *which* teacher — `calibrated`, one of
+      them, not a mixture — but only ever passed it via `--expert`. The default
+      in `main()` is still `straggler`, and the recorded recipes in CLAUDE.md
+      still say `distance`, so nothing on disk reflects the decision. Change the
+      default, update the recipes, and the whole question is closed.
 - [ ] **Should `lookahead2` search on `shaped` instead of `straggler`?**
       `shaped` wins 58.2% ± 4.8 head to head at one ply, but costs 14.7 µs a
       candidate against 1.7 µs, and the search evaluates ~b² leaves. A move
@@ -67,12 +74,6 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
 
 ## Heuristics still worth consolidating
 
-- [x] **Two straggler terms, never measured against each other.** Answered: they
-      correlate at 0.39 within a candidate set and neither subsumes the other,
-      and dropping `stragglerLagScore` costs `shaped` 24.5% (±6.0). Both stay.
-      Written up in ARCHITECTURE.md along with the finding that came out of the
-      same measurement — `jumpPotentialScore` has 4x the vote, 37% of the cost
-      and the least strength of `shaped`'s three shape terms.
 - [ ] **`shaped` computes its shape terms even when they cannot matter.** They
       are multiplied by `unfilledTargetScore`, so they fade to nothing as pieces
       arrive — but all 14 µs of them are still computed when that factor is near
@@ -82,50 +83,22 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
 - [ ] **Remove `Strategy.ALIASES`** once the recorded recipes have been moved to
       the new bot names. It exists so that commands written before 2026-08-14
       keep running; it is not meant to be permanent.
+
 ## Calibration: what is left
 
-- [x] **Put every primitive on a common scale**, and **fit the weights instead
-      of sweeping them**. Both done, both in ARCHITECTURE.md.
-- [x] **Confirm `calibrated` on fresh seeds.** Done: 73.7% (±5.0) against
-      `shaped`, and level with it against third parties. Adopted.
-- [x] **The four partial variants have not been confirmed.** Answered: all four
-      are sound — zero draws in 2,000 games, normal lengths. Written up.
-- [x] **Check the family is actually diverse.** Answered by
-      `scripts/variantAgreement.py`, and half the family fails it:
-      `calibratedPlain` agreed with `distance` on 91.4% of midgame positions and
-      `calibratedLag` sat in the same cluster — both since removed — and
-      `calibrated` agrees with `shaped` 80.3%. `calibratedJump` and
-      `calibratedCluster` are the two real axes. All in ARCHITECTURE.md.
-- [x] **Replace `calibratedPlain`.** Done: it is removed, and
-      `calibratedClusterJump` has its slot — sound, 48.0% against `calibrated`,
-      and agreeing with nothing above 63.2%. The run also produced the finding
-      that generalises: **fitting on win rate pulls pool members together**,
-      because in this panel win rate rewards `home`-heavy distance-like play.
-      The fit's own winner was the least distinct of three tied finalists.
-      Written up in ARCHITECTURE.md under "Fitting for strength does not fit
-      for a pool".
-- [x] **Decide `calibratedLag`'s fate.** Removed. It leaned into the distance
-      cluster (87.5% midgame) rather than away from it, so it added no coverage.
-      A verdict on the vector, not on `stragglerLagScore`, which stays in
-      `calibrated`. **The panel is now frozen**: `calibrated`, `calibratedCluster`,
-      `calibratedJump`, `calibratedClusterJump`.
-- [x] **Would a bot per primitive widen the pool?** Answered: no. Single-term
-      bots have no drive to the target — 0.0% against `distance`, and 12/12
-      draws at the move ceiling when played against each other. Even a bot that
-      keeps `distance` at 1.0 but weights a shape term 3.0 stalls 12/12. Written
-      up in ARCHITECTURE.md as "Diversity is bounded by playability".
-- [ ] **Buy diversity at the episode level instead.** Follows from the above:
-      every sound vector in this family has to be distance-dominated, so
-      reweighting has a ceiling and the pool is close to it. The untried levers
-      are outside the bots — `--opponentSampling` (already implemented, used
-      once in `progressivePhase2`) and varied openings (see the plausible-
-      opening-plies idea; uniform random openings were measured once and did not
-      help). Neither has been measured *for diversity*, only for strength.
-- [ ] **Or add a genuinely new primitive.** The other way past the bound. The
-      five terms are all some flavour of progress-or-shape; nothing scores
-      blocking, tempo, or the opponent's position at all. That is a bigger piece
-      of work than a refit and should follow the teacher measurement, not
-      precede it.
+- [ ] **Buy diversity at the episode level instead.** Follows from "Diversity is
+      bounded by playability" in ARCHITECTURE.md: every sound vector in this
+      family has to be distance-dominated, so reweighting has a ceiling and the
+      pool is close to it. The untried levers are outside the bots —
+      `--opponentSampling` (already implemented, used once in
+      `progressivePhase2`) and varied openings (see the plausible-opening-plies
+      idea; uniform random openings were measured once and did not help).
+      Neither has been measured *for diversity*, only for strength.
+- [ ] **Or add a genuinely new primitive.** The other way past the same bound.
+      The five terms are all some flavour of progress-or-shape; nothing scores
+      blocking, tempo, or the opponent's position at all. A bigger piece of work
+      than a refit, and the teacher measurement it was queued behind is now
+      done, so nothing is holding it up but priority.
 - [ ] **`calibratedCluster`'s fit found nothing.** The control vector won its
       round outright, which is either a real optimum or too small a search for
       two free weights. One re-run at higher `--candidates` settles it; leave the
@@ -155,29 +128,22 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
       an alternative has discarded it; it wins only when it is the only shape
       term on offer. The measurement that would settle it is an ablation on the
       calibrated bot — drop the term, refit the rest, see what it costs.
-- [x] **Measure whether a mixed teacher makes a broader clone.** Answered: no,
-      on both axes and at equal budget. Breadth minimum 42.4% (single) against
-      40.7% (mixed); all four sampled strength comparisons favour the single
-      clone, two outside the margins. So `pretrain` keeps one teacher, and
-      `calibrated` is it. Both arms are on disk as `models/teacherSingle` and
-      `models/teacherMixed`. Written up in ARCHITECTURE.md, along with the
-      methodological finding that came out of it — argmax margins against a
-      deterministic bot are far too tight, because 30 argmax games produce only
-      about 5 distinct game lines.
 - [ ] **Rerun the teacher comparison at 500k before the rebuild commits to it.**
-      The result above is at equal *cost*, which is the right basis for choosing
-      today, but not for the question itself: both clones were still improving
+      The 2026-08-22 result — one teacher beats a mixture on breadth and on
+      strength, written up in ARCHITECTURE.md under "A mixed teacher does not
+      make a broader clone" — is at equal *cost*, which is the right basis for
+      choosing today but not for the question itself: both clones were improving
       at epoch 12 and fitting five teachers is the harder problem, so the
       mixture was the more data-starved arm. 500k is the budget the recorded
       generation-2 clone used and the one the rebuild will use anyway. Cheap to
       decide against — if the minimum still does not move, the question is
       closed for good.
-- [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
-      of the exercise — Talos2 gets rebuilt from scratch on the new bots. The
-      two decisions that belong to that moment are settled by the measurement
-      above and by the pool membership work: which teacher mixture
-      `scripts/pretrain.py` clones from, and which of the calibrated family go
-      into the opponent pool.
+- [ ] **Re-clone and retrain.** This is the whole point of the exercise — Talos2
+      gets rebuilt from scratch on the new bots, and the panel it needed has
+      been frozen since 2026-08-21. Both blocking decisions are made: the clone
+      copies `calibrated` alone, and the opponent pool is the four frozen
+      variants. What is left is running it, at the 500k budget the recorded
+      generation-2 clone used.
 
 ## Now
 
