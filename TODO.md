@@ -166,25 +166,32 @@ cannot buy by reweighting is bounded, and why, is in ARCHITECTURE.md under
       Sampled play is its weak side, 16.0% against `shaped` — the same profile
       the 150k clone of 2026-08-09 had.
 
-      **Arm 2 was collecting when the session ended.** Same budget and seed,
-      five teachers. If it did not survive, rerun exactly:
-      ```
-      python -u -m scripts.pretrain --samples 150000 --epochs 12 --seed 0 \
-          --expert calibrated calibratedCluster calibratedJump \
-          calibratedClusterJump straggler --name teacherMixed > teacherMixed.log
-      ```
-      Then compare on two axes. Strength: `scripts.evaluateAgainstBots` on both
-      checkpoints. Breadth: `scripts/teacherAgreement.py`, written for this and
-      not yet run against anything —
-      ```
-      python -u -m scripts.teacherAgreement models/teacherSingle models/teacherMixed \
-          --teachers calibrated calibratedCluster calibratedJump \
-          calibratedClusterJump straggler
-      ```
-      **Read the minimum, not the mean.** A clone that copies one teacher and
-      ignores the rest scores the same mean as one covering all five; only the
-      per-teacher minimum separates broad from collapsed. Low on all is the
-      third outcome, blurred, and it is the real risk of mixing.
+      **Arm 2 is done too**, `models/teacherMixed.zip`, same budget and seed,
+      five teachers, ending at 60.5% averaged agreement against arm 1's 78.0%
+      on its single teacher.
+
+      **Breadth: the mixed teacher did not deliver it.** Per-teacher argmax
+      agreement over 1,500 shared positions, `teacherSingle` then
+      `teacherMixed`: `calibrated` 71.5 / 60.6, `calibratedCluster` 44.5 / 50.1,
+      `calibratedJump` 43.7 / 40.7, `calibratedClusterJump` 51.4 / 47.5,
+      `straggler` 42.4 / 42.2. Mean 50.7 / 48.2, **minimum 42.4 / 40.7**. The
+      pre-registered criterion was a minimum well above the single-teacher
+      clone's, and it is level-to-worse. What the mixture did was flatten the
+      profile — it gave up 10.9 points on `calibrated` to gain 5.6 on
+      `calibratedCluster` — which is redistribution, not breadth.
+
+      Strength is still to come; `scripts.evaluateAgainstBots` at 100 games over
+      `distance shaped calibrated calibratedJump`, seed 80000, was running when
+      this was written, into `teacherStrength.log`. It matters because the two
+      arms' 50-game closing evaluations disagree with the breadth reading:
+      `teacherMixed` beat `shaped` 50-0 at argmax where `teacherSingle` went
+      39-11. Do not write the conclusion up until that lands.
+
+      **Caveat that belongs in the write-up either way:** both clones were still
+      improving at epoch 12, and the mixed teacher is the harder fitting problem
+      of the two, so an equal *budget* is not an equal *opportunity*. Equal cost
+      is the fair comparison for choosing today; a 500k rerun is the fair
+      comparison for the question itself.
 - [ ] **Re-clone and retrain once the panel is frozen.** This is the whole point
       of the exercise — Talos2 gets rebuilt from scratch on the new bots. The
       two decisions that belong to that moment are settled by the measurement

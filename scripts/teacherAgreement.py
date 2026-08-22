@@ -125,15 +125,25 @@ def main() -> None:
     print(f"collecting {args.positions} positions, driver rotating over {args.teachers}")
     observations, masks, choices = collect(args.teachers, args.opponent, args.positions, args.seed)
 
-    width = max(len(path) for path in args.checkpoints)
-    header = f"{'checkpoint':<{width}}" + "".join(f"{name[:11]:>13}" for name in args.teachers)
-    print(f"\nagreement with each teacher, argmax\n{header}  {'mean':>7}{'min':>7}")
-    print("-" * (len(header) + 14))
+    # Teachers as rows: their names are long and several share a prefix, so a
+    # column per teacher either truncates them into ambiguity or wraps the line.
+    rates = {}
     for path in args.checkpoints:
         actions = np.array(predict(path, observations, masks))
-        rates = [float(np.mean(actions == np.array(choices[name]))) for name in args.teachers]
-        cells = "".join(f"{rate * 100:12.1f}%" for rate in rates)
-        print(f"{path:<{width}}{cells}  {np.mean(rates) * 100:6.1f}%{min(rates) * 100:6.1f}%")
+        rates[path] = [float(np.mean(actions == np.array(choices[name]))) for name in args.teachers]
+
+    width = max(len(name) for name in args.teachers) + 2
+    columns = [path.rsplit("/", 1)[-1] for path in args.checkpoints]
+    print(f"\nagreement with each teacher, argmax over {len(observations)} positions")
+    print(f"{'teacher':<{width}}" + "".join(f"{column:>22}" for column in columns))
+    print("-" * (width + 22 * len(columns)))
+    for row, name in enumerate(args.teachers):
+        cells = "".join(f"{rates[path][row] * 100:21.1f}%" for path in args.checkpoints)
+        print(f"{name:<{width}}{cells}")
+    print("-" * (width + 22 * len(columns)))
+    for label, reduce in (("mean", np.mean), ("min", min)):
+        cells = "".join(f"{reduce(rates[path]) * 100:21.1f}%" for path in args.checkpoints)
+        print(f"{label:<{width}}{cells}")
 
     print(
         "\nBreadth is the minimum, not the mean: a clone that copied one teacher"
