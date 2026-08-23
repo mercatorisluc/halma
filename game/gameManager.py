@@ -125,12 +125,6 @@ class HalmaGame:
         index = self.gameLength() % len(self.playOrder)
         return self.playOrder[index]
 
-    def gameObservation(self):
-        player = self.currentPlayer()
-        boardState = self.board.boardState()
-        validMoves = self.board.allValidMoves(player)
-        return boardState, validMoves, player
-
     def printBoard(self) -> None:
         boardMatrix: list[list[str]] = [[" " for _ in range(26)] for _ in range(18)]
         for field in self.board.fields:
@@ -173,11 +167,11 @@ class InteractiveGame(HalmaGame):
     def __init__(self):
         super().__init__()
 
-    # The strongest measured bot, so the human gets a real opponent: lookahead2
-    # beats straggler 90%, which beats distance 84%. Its worst move
-    # takes ~130ms, over the pygame loop's 100ms frame budget, but that reads as
-    # the opponent thinking rather than as a stutter. ComputedGame deliberately
-    # keeps the cheap bots -- it feeds the RL env, which needs speed.
+    # The strongest measured bot, so the human gets a real opponent (the
+    # strength order is in ARCHITECTURE.md). Its worst move takes ~130ms, over the
+    # pygame loop's 100ms frame budget, but that reads as the opponent thinking
+    # rather than as a stutter. ComputedGame deliberately keeps the cheap bots
+    # -- it feeds the RL env, which needs speed.
     HUMAN_OPPONENT = "lookahead2"
 
     def initStandardGame(self) -> None:

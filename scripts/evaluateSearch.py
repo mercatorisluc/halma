@@ -11,7 +11,7 @@ this script exists rather than comparing against the numbers
 directly and a searching player cannot be seated in it.
 
 Both seat directions are played, because the first-mover advantage here is
-worth about five points (ARCHITECTURE.md's opening sweep) and one direction
+worth about five points (RESULTS.md's opening sweep) and one direction
 would fold it into the result invisibly.
 
 Draws are reported rather than swallowed. They are what a policy without a
@@ -27,40 +27,14 @@ import time
 from env.halmaEnv import HalmaEnv
 from env.neuralPlayer import NeuralComputer
 from env.searchPlayer import SearchingComputer
-from game.gameManager import ComputedGame
-from game.player import Computer
 from heuristics.strategy import STRATEGY_NAMES
-from scripts.compareCheckpoints import Result
+from scripts.matchStats import Bot, Seated, playBothSeats
 
 
 def buildAgent(seat: int, checkpoint: str, candidates: int, replies: int, search: bool):
     if not search:
         return NeuralComputer(seat, checkpoint)
     return SearchingComputer(seat, checkpoint, candidates=candidates, replies=replies)
-
-
-def playMatch(agent: NeuralComputer, botName: str, games: int, seed: int) -> Result:
-    """``games`` games of ``agent`` against ``botName``, scored from the agent."""
-    result = Result()
-    botSeat = (
-        HalmaEnv.OPPONENT_SEAT if agent.identifier == HalmaEnv.AGENT_SEAT else HalmaEnv.AGENT_SEAT
-    )
-    for i in range(games):
-        game = ComputedGame()
-        game.seed(seed + i)
-        bot = Computer(botSeat, botName)
-        players = [agent, bot] if agent.identifier < botSeat else [bot, agent]
-        game.initGame(players)
-        agent.attachTo(game)
-        winner = game.play()
-        result.moves += game.gameLength()
-        if winner is None:
-            result.draws += 1
-        elif winner == agent.identifier:
-            result.wins += 1
-        else:
-            result.losses += 1
-    return result
 
 
 def main() -> None:
@@ -83,10 +57,12 @@ def main() -> None:
     print(f"{args.checkpoint} -- {mode}")
     print(f"{args.games} games per seat direction, seed {args.seed}\n")
 
-    agents = [
-        buildAgent(seat, args.checkpoint, args.candidates, args.replies, search)
+    # One agent per seat: a player carries its seat from construction, so the
+    # swapped leg needs the other instance rather than the same one moved.
+    agents = {
+        seat: buildAgent(seat, args.checkpoint, args.candidates, args.replies, search)
         for seat in (HalmaEnv.AGENT_SEAT, HalmaEnv.OPPONENT_SEAT)
-    ]
+    }
 
     header = (
         f"{'bot':<18} {'win%':>14}  {'W':>3} {'L':>3} {'D':>3}  {'avg moves':>9}  {'s/game':>7}"
@@ -95,15 +71,7 @@ def main() -> None:
     print("-" * len(header))
     for botName in args.bots:
         started = time.perf_counter()
-        combined = Result()
-        for agent in agents:
-            half = playMatch(agent, botName, args.games, args.seed)
-            combined = Result(
-                wins=combined.wins + half.wins,
-                losses=combined.losses + half.losses,
-                draws=combined.draws + half.draws,
-                moves=combined.moves + half.moves,
-            )
+        combined, _, _ = playBothSeats(Seated(agents), Bot(botName), args.games, args.seed)
         elapsed = time.perf_counter() - started
         rate = f"{combined.winRate * 100:5.1f} +/- {combined.marginOfError * 100:4.1f}"
         print(

@@ -155,11 +155,10 @@ class HalmaBoard:
         not: it is what makes this a *fine-grained* gradient. Every field on the
         board has its own distance to the tip, so moves are ordered everywhere,
         whereas a distance to the nearest target field is full of plateaus that
-        leave candidates tied. Measured over 150 games with the zone distance
-        substituted here, `plainDistance` fell to 31.3% (+/- 7.4) against this
-        version with 29 draws, and neither restricting it to pieces still out
-        (22.0%, 70 draws) nor aiming at the nearest *free* target (22.0%, 79
-        draws) recovered it -- the ties make the bot dither instead of finish.
+        leave candidates tied. Substituting the zone distance here was measured
+        and loses badly, and no variant of it recovers -- the ties make the bot
+        dither instead of finish, which the draw counts give away. Figures in
+        ARCHITECTURE.md.
 
         The flip side is that it never reaches 0: a won position still scores
         1.25, since the target fields are 0-4 steps from the tip. That is

@@ -29,11 +29,11 @@ because the two consumers want different things from the same board:
 
 That split is the answer to a measured problem. ``env/searchPlayer.py`` ranked
 sibling positions with the critic and played *worse* than the policy it wrapped
-(ARCHITECTURE.md), and of the two candidate causes -- the PPO objective, which
+(RESULTS.md), and of the two candidate causes -- the PPO objective, which
 only ever asks the critic to be a baseline, and capacity -- this addresses the
 second: the value head used to be 20,673 parameters behind a straggler whose
 shape the policy had chosen. It does not address the first, and the sibling-
-ranking probe recorded in ARCHITECTURE.md is still the measurement that says
+ranking probe recorded in RESULTS.md is still the measurement that says
 which of the two was actually binding.
 
 The output is the two branches concatenated, which
@@ -117,8 +117,8 @@ class HalmaFeatures(BaseFeaturesExtractor):
             policyOut = int(self.policyBranch(trunk).shape[1])
             valueOut = int(self.valueBranch(trunk).shape[1]) + int(self.valuePool(trunk).shape[1])
 
-        # Both branches see the scalars: they are four numbers, and the value
-        # in particular is largely a question about two of them.
+        # Both branches see the scalars: they are five numbers, and the value
+        # in particular is largely a question about the two "pieces home" counts.
         self.policyHead = nn.Sequential(nn.Linear(policyOut + scalarCount, features), nn.ReLU())
         self.valueHead = nn.Sequential(nn.Linear(valueOut + scalarCount, valueFeatures), nn.ReLU())
 

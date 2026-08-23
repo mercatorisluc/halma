@@ -1,19 +1,22 @@
 """Play Halma against a trained policy, in the pygame window.
 
     python -m scripts.playAgainstAgent
-    python -m scripts.playAgainstAgent --model models/Talos1.0 --sampled
+    python -m scripts.playAgainstAgent --model models/Talos2.0_round4 --sampled
 
 ``main.py`` seats ``lookahead2``, the strongest bot. This seats a network
 instead, so its play can be watched rather than only scored -- a win rate says
-that it wins, not what it does, and the specialisation the evaluation found
-(99% against the bot it trained on, ~90% against random) is the kind of thing
-that shows itself in the moves.
+that it wins, not what it does, and a policy specialised to the opponent it
+trained against is the kind of thing that shows itself in the moves.
 
-The default is the strongest checkpoint saved. The heuristic panel does not
-separate the top checkpoints under argmax -- all three Talos versions score
-99-100% against every bot -- so the ranking comes from head-to-head play:
-``Talos1.2`` beats ``Talos1.1`` 69.4% over all 800 two-ply openings, which in
-turn beats ``Talos1.0`` 70.5% (``scripts/openingSweep.py``).
+The default is the strongest checkpoint that exists: ``Talos2.0_round5``, the
+end of the generation-2 league. The heuristic panel does not separate the top
+checkpoints under argmax, so that ranking comes from head-to-head play
+(``scripts/openingSweep.py``); the figures are in RESULTS.md and
+``models/manifest.md``.
+
+**Only generation-2 checkpoints can be seated here.** The 2026-08-07
+observation and critic changes made every ``Talos1.x`` file unloadable, so
+passing one raises rather than playing.
 
 The human plays seat 2, ``NeuralComputer`` on seat 1 -- an arbitrary choice now
 that the policy can be seated on either (see ``env/halmaEnv.py``'s
@@ -34,7 +37,7 @@ from visual.gameVisualization import GameVisualization
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default="models/Talos1.2", help="checkpoint to play")
+    parser.add_argument("--model", default="models/Talos2.0_round5", help="checkpoint to play")
     parser.add_argument(
         "--sampled",
         action="store_true",

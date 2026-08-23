@@ -35,37 +35,12 @@ visible rather than averaged away.
 from __future__ import annotations
 
 import argparse
-import math
-from dataclasses import dataclass
 from itertools import combinations
 
 from env.halmaEnv import HalmaEnv
 from env.neuralPlayer import NeuralComputer
 from game.gameManager import ComputedGame
-
-
-@dataclass
-class Result:
-    wins: int = 0
-    losses: int = 0
-    draws: int = 0
-    moves: int = 0
-
-    @property
-    def games(self) -> int:
-        return self.wins + self.losses + self.draws
-
-    @property
-    def winRate(self) -> float:
-        return self.wins / self.games if self.games else 0.0
-
-    @property
-    def marginOfError(self) -> float:
-        """Rough 95% interval half-width for the win rate."""
-        if not self.games:
-            return 0.0
-        p = self.winRate
-        return 1.96 * math.sqrt(max(p * (1 - p), 1e-9) / self.games)
+from scripts.matchStats import Result, Seated, playBothSeats
 
 
 def buildAgents(
@@ -80,51 +55,17 @@ def buildAgents(
     }
 
 
-def playMatch(agentA: NeuralComputer, agentB: NeuralComputer, games: int, seed: int = 0) -> Result:
-    """Play ``games`` games of A (seat 1) against B (seat 2)."""
-    result = Result()
-    for i in range(games):
-        game = ComputedGame()
-        game.seed(seed + i)
-        game.initGame([agentA, agentB])
-        agentA.attachTo(game)
-        agentB.attachTo(game)
-        winner = game.play()
-        result.moves += game.gameLength()
-        if winner is None:
-            result.draws += 1
-        elif winner == HalmaEnv.AGENT_SEAT:
-            result.wins += 1
-        else:
-            result.losses += 1
-    return result
-
-
 def playPairing(
     agents: dict[str, dict[int, NeuralComputer]], a: str, b: str, games: int, seed: int
 ) -> tuple[Result, Result, Result]:
     """Play ``a`` against ``b`` in both seat directions, scored from a's view.
 
-    Returns ``(combined, aOnSeat1, aOnSeat2)``. The reverse leg is played with
-    ``b`` on seat 1, so its wins are a's losses and vice versa -- flipped here
-    rather than at the call site, where the inversion is easy to miss.
+    ``buildAgents`` loads each checkpoint once per seat, and ``Seated`` picks
+    the instance matching whichever seat the swapped leg asks for -- a
+    `NeuralComputer` carries its seat from construction, so the two legs need
+    the two instances rather than one reused.
     """
-    forward = playMatch(
-        agents[a][HalmaEnv.AGENT_SEAT], agents[b][HalmaEnv.OPPONENT_SEAT], games, seed
-    )
-    reverse = playMatch(
-        agents[b][HalmaEnv.AGENT_SEAT], agents[a][HalmaEnv.OPPONENT_SEAT], games, seed
-    )
-    flipped = Result(
-        wins=reverse.losses, losses=reverse.wins, draws=reverse.draws, moves=reverse.moves
-    )
-    combined = Result(
-        wins=forward.wins + flipped.wins,
-        losses=forward.losses + flipped.losses,
-        draws=forward.draws + flipped.draws,
-        moves=forward.moves + flipped.moves,
-    )
-    return combined, forward, flipped
+    return playBothSeats(Seated(agents[a]), Seated(agents[b]), games, seed)
 
 
 def playOrderOutcomes(

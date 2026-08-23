@@ -65,11 +65,8 @@ class SplitMlpExtractor(nn.Module):
     Stock behaviour is that the features extractor produces one vector and both
     the policy and the value MLP read all of it. ``HalmaFeatures`` instead
     returns its policy branch and its value branch concatenated, and this cuts
-    them apart again at ``policyDim``.
-
-    The alternative sb3 offers -- ``share_features_extractor=False`` -- builds
-    two complete extractors, convolutions included, and so pays for the trunk
-    twice. Here the trunk runs once and only the branches differ.
+    them apart again at ``policyDim``. Why the branches differ at all is in
+    ``env/features.py``; what matters here is only where to cut.
 
     The three methods and the two ``latent_dim_*`` attributes are the whole
     interface ``ActorCriticPolicy`` uses: ``forward`` on the shared path,

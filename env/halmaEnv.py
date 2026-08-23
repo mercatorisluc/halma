@@ -75,7 +75,7 @@ class HalmaEnv(gym.Env):
     and the argmax opponent still supplies ``1 - opponentSampling`` of the
     episodes: a mixture on purpose, because the one run that replaced the
     standard case outright rather than mixing it lost measurably on the
-    distribution it stopped seeing (ARCHITECTURE.md). Heuristics have no
+    distribution it stopped seeing (RESULTS.md). Heuristics have no
     distribution to sample, so a value above zero without any checkpoint to
     apply it to is refused rather than silently ignored.
 
@@ -360,20 +360,12 @@ class HalmaEnv(gym.Env):
     def _parityClasses(self) -> np.ndarray:
         """Field id -> which of the four jump-invariant classes it belongs to.
 
-        **Every jump preserves ``(x mod 2, y mod 2)``.** The six jump deltas on
-        this board are ``(+-2, 0)``, ``(0, +-2)`` and ``(+-2, -+2)`` -- all of
-        them even in both coordinates -- so a jump, and therefore a whole
-        jump chain however long, can never leave the class it started in. Only
-        a single step changes it, and a single step covers one field where a
-        jump covers two.
-
-        That splits the 121 fields into four classes of 37/28/28/28, and it is
-        the sharper invariant than the parity of the *distance*: a delta of
-        ``(1, 1)`` has hex distance 2, which an even-distance argument would
-        call jump-reachable, while the class correctly says it is not.
-
-        Verified against the board rather than assumed -- ``jumpNeighbours``
-        was enumerated over all 121 fields and every delta came out even.
+        **Every jump preserves ``(x mod 2, y mod 2)``**, so a jump chain of any
+        length cannot leave the class it started in and only a single step
+        changes class. The 121 fields split 37/28/28/28. Why that is the right
+        invariant, and what follows from it, is in ARCHITECTURE.md under "Jumps
+        cannot change parity"; this is the only copy that has to stay in step
+        with the code.
         """
         return np.array(
             [(field.coord[0] % 2) * 2 + (field.coord[1] % 2) for field in self.board.fields]
@@ -382,30 +374,18 @@ class HalmaEnv(gym.Env):
     def _parityMismatch(self, player: HalmaPlayer) -> int:
         """Pieces that must still change class, which costs a single step each.
 
-        The pieces not yet home have to end up on the target fields not yet
-        filled. Within a class that is free -- jumps alone can do it -- but a
-        class holding more stragglers than it has open target fields must send
-        the surplus elsewhere, and every one of those crossings costs at least
-        one single step. Summed over the classes, that surplus is a **lower
-        bound on the single steps still owed**, no matter how good the jump
-        chains are.
+        A **lower bound on the single steps still owed** however good the jump
+        chains are: a class holding more stragglers than it has open target
+        fields must send the surplus across a boundary, at one step each. See
+        ARCHITECTURE.md, "Jumps cannot change parity", for why this is worth
+        having -- remaining *distance* is completely blind to it.
 
-        It is worth having because nothing else in the observation or the
-        reward expresses it. ``_progress`` counts board distance, and distance
-        is blind to this: two positions with identical remaining travel can
-        differ by several forced steps.
-
-        Zero at the opening, and that is not a coincidence -- start and target
-        zone have the same class distribution (6/3/3/3), so the opening is
-        already perfectly matched and a jump-only solution is not ruled out.
-        Zero again once every piece is home, since both sets are then empty.
-        So this measures a detour the middle game can wander into and back out
-        of, which is exactly the shape a shaping term should have.
-
-        Counted on the class *labels* only, so it does not matter that the
-        canonical frame permutes which class is which -- a rotation maps the
-        four classes onto each other bijectively, and a sum over all four is
-        invariant under that relabelling.
+        Two properties the callers depend on. It is **0 at the opening and 0
+        again once every piece is home**, so the potential built on it still
+        runs from exactly 0 to exactly 1. And it is counted on the class
+        *labels* only, so it survives the canonical frame permuting which class
+        is which -- a rotation maps the four onto each other bijectively and a
+        sum over all four is invariant under the relabelling.
         """
         stragglers = player.positions - player.endPositions
         openTargets = player.endPositions - player.positions
@@ -678,17 +658,11 @@ class HalmaEnv(gym.Env):
         drown the result out entirely.
 
         **Travel is not the whole story, and the parity penalty is the rest.**
-        Distance is blind to the jump structure: a position can have exactly
-        the remaining travel of another and still owe several single steps that
-        the other does not, because its stragglers sit in classes with no open
-        target field left (:meth:`_parityMismatch`). Those steps are real and
-        forced, so the potential charges for them.
-
-        Both ends of the scale survive it. The mismatch is 0 at the opening --
-        start and target zone have the same class distribution -- and 0 again
-        once every piece is home, so the potential still runs from exactly 0 to
-        exactly 1 and the penalty only bites in between. It is a detour that
-        can be wandered into and back out of, not a shift of the scale.
+        Distance is blind to the forced single steps that :meth:`_parityMismatch`
+        counts, so the potential charges for them. Both ends of the scale
+        survive it, because that mismatch is 0 at the opening and 0 again once
+        every piece is home -- it is a detour the middle game wanders into, not
+        a shift of the scale.
 
         **The penalty scales the travel term rather than being subtracted from
         it**, and that is not cosmetic. Subtracting was tried first and breaks

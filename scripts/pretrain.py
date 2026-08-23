@@ -6,9 +6,9 @@
 PPO starts from noise, and from noise this game gives it nothing to learn from:
 a random agent wins none of 700 games, and 300k steps of shaped training still
 end at 0 wins and a few percent of pieces home. The bots, meanwhile, already
-play it -- ``straggler`` beats ``distance`` 84% of the time and costs
-0.3ms a move. Copying one is a far cheaper way into the right region of policy
-space than discovering it.
+play it, and cheaply -- a scoring bot picks a move in well under a millisecond.
+Copying one is a far cheaper way into the right region of policy space than
+discovering it.
 
 So this plays games with the bot on the agent's seat, records what it chose in
 every position, and fits the policy to those choices by plain cross-entropy.
@@ -46,6 +46,7 @@ from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
 from env.policy import FactoredMaskablePolicy
 from heuristics.strategy import makeStrategy
+from scripts.matchStats import marginOfError
 from scripts.train import evaluate, report
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
@@ -239,8 +240,13 @@ def fit(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    # `calibrated`, and one teacher rather than several. Measured 2026-08-22
+    # against a five-teacher mixture at equal budget: the mixture bought
+    # nothing -- per-teacher breadth minimum 40.7% against 42.4%, and all four
+    # sampled strength comparisons favoured the single teacher. See
+    # RESULTS.md, "A mixed teacher does not make a broader clone".
     parser.add_argument(
-        "--expert", nargs="+", default=["straggler"], help="bot(s) to copy, one drawn per game"
+        "--expert", nargs="+", default=["calibrated"], help="bot(s) to copy, one drawn per game"
     )
     parser.add_argument("--opponent", default="distance")
     parser.add_argument("--samples", type=int, default=100_000, help="positions to record")
@@ -358,7 +364,7 @@ def evaluateBot(strategy: str, opponent: str, games: int) -> dict:
         "losses": losses,
         "draws": draws,
         "winRate": rate,
-        "marginOfError": 1.96 * float(np.sqrt(max(rate * (1 - rate), 1e-9) / games)),
+        "marginOfError": marginOfError(rate, games),
         "avgSteps": 0.0,
         "homeFraction": float(np.mean(homeFractions)),
     }

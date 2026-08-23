@@ -23,7 +23,6 @@ more than pay for the smaller network and the fewer passes. Neither won a game.
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 from typing import cast
 
@@ -36,6 +35,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 from env.features import HalmaFeatures
 from env.halmaEnv import HalmaEnv
 from env.policy import FactoredMaskablePolicy
+from scripts.matchStats import marginOfError
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
 
@@ -175,7 +175,7 @@ def evaluate(
         "losses": losses,
         "draws": draws,
         "winRate": rate,
-        "marginOfError": 1.96 * math.sqrt(max(rate * (1 - rate), 1e-9) / games),
+        "marginOfError": marginOfError(rate, games),
         "avgSteps": steps / games,
         # Pieces home when the game ended. The win rate is expected to sit at
         # zero for a long while, so this is what shows whether the agent is

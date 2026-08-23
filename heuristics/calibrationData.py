@@ -2,14 +2,10 @@
 
 Measured 2026-08-14 over 40 games of every pairing of
 distance, tipDistance, shaped, straggler at seed 0: 57110 positions. See
-`heuristics/calibration.py` for what the two fits mean and why a primitive gets
-one rather than the other.
+`heuristics/calibration.py` for what the fit means.
 """
 
 from __future__ import annotations
-
-# primitive -> (mean, standard deviation) of the raw values.
-LOGISTIC_FIT: dict[str, tuple[float, float]] = {}
 
 # primitive -> (knots, the point in [0, 1] each knot maps to).
 QUANTILE_KNOTS: dict[str, tuple[list[float], list[float]]] = {

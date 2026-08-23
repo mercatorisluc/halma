@@ -11,31 +11,25 @@ cumulative distribution function and the result is uniform on [0, 1] by
 construction, so a calibrated primitive contributes on the same footing as
 every other one and the weights in `heuristics/strategy.py` mean what they say.
 
-Two fits, chosen per primitive by measurement rather than by taste:
+**One fit: a quantile table.** Knots taken from the measured distribution,
+linearly interpolated between. Uniform to within the knot spacing whatever the
+shape of the distribution, which is what the discrete primitives need too:
+`stragglerTravelScore` takes 13 values and `unfilledTargetScore` 15, so their
+knots are those values and each maps to its mid-rank -- the best a discrete
+variable admits, since no map can spread 13 values evenly over an interval.
 
-- **Quantile table.** Knots taken from the measured distribution, linearly
-  interpolated between. Uniform to within the knot spacing whatever the shape
-  of the distribution, which is what the discrete primitives need too:
-  `stragglerTravelScore` takes 13 values and `unfilledTargetScore` 15, so their
-  knots are those values and each maps to its mid-rank -- the best a discrete
-  variable admits, since no map can spread 13 values evenly over an interval.
-- **Logistic.** The logistic CDF *is* the sigmoid, so `1 / (1 + exp(-(x-mu)/s))`
-  is the same transformation for a logistic variable and an approximation for
-  anything roughly bell-shaped. One `exp` against a bisect and a lerp, and its
-  slope varies gently where a quantile table's jumps between bins.
+A logistic fit was the obvious cheaper alternative -- the logistic CDF *is* the
+sigmoid -- and it was carried here until 2026-08-23 without ever being
+selected. Over 57k positions its worst-case deviation from uniform ran 0.044 to
+0.194 where the table managed 0.015 to 0.021, so every primitive failed it.
+These distributions are simply not bell-shaped: `jumpPotentialScore` is sharply
+peaked and `tipDistanceScore` close to flat over its range. Recorded here so
+nobody reaches for it again without measuring; git at `d194c5d` has the code.
 
-  It is kept because it is the cheaper map and the obvious thing to reach for,
-  and it is currently used by nothing: over 57k positions its worst-case
-  deviation from uniform ran 0.044 to 0.194 where the table managed 0.015 to
-  0.021, so every primitive failed the `MAX_LOGISTIC_KS` gate in
-  `scripts/calibrateScores.py`. These distributions are simply not bell-shaped
-  -- `jumpPotentialScore` is sharply peaked and `tipDistanceScore` is close to
-  flat over its range. Recalibrate rather than assume if a primitive changes.
-
-A calibrated term costs 0.13 us against 0.06 us for the logistic, measured over
-2M calls. That is affordable but not nothing: `shaped` calibrates five terms on
-top of 14.7 us a candidate (+5%), where `straggler` calibrates three on top of
-1.7 us (+23%), and `straggler` is the leaf `lookahead2` searches on.
+A calibrated term costs 0.13 us, measured over 2M calls. That is affordable but
+not nothing: `shaped` calibrates five terms on top of 14.7 us a candidate
+(+5%), where `straggler` calibrates three on top of 1.7 us (+23%), and
+`straggler` is the leaf `lookahead2` searches on.
 
 Calibration is not free of consequence. The slope of a quantile map is
 1/density, so it spreads differences where positions are dense and compresses
@@ -52,10 +46,9 @@ and would break under anything else.
 from __future__ import annotations
 
 from bisect import bisect_left
-from math import exp, pi, sqrt
 from typing import TYPE_CHECKING
 
-from heuristics.calibrationData import LOGISTIC_FIT, QUANTILE_KNOTS
+from heuristics.calibrationData import QUANTILE_KNOTS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,29 +67,11 @@ PRIMITIVES = [
     "unfilledTargetScore",
 ]
 
-# A logistic distribution of scale s has standard deviation s*pi/sqrt(3); this
-# turns the measured standard deviation into the scale the sigmoid wants.
-SCALE_FROM_STD = sqrt(3) / pi
-
 # Below this many distinct values a primitive is tabulated at the values
 # themselves rather than at quantiles. Nothing subtle about the threshold --
 # the measured counts are 12 and 15 for the two discrete primitives and 156 or
 # more for every other one, so anything in between separates them.
 DISCRETE_MAX_LEVELS = 32
-
-
-def logisticCalibrator(mean: float, std: float) -> Callable[[float], float]:
-    """Sigmoid centred on `mean`, scaled so the output spreads over [0, 1].
-
-    No overflow guard on the `exp`: it would need the value to sit some 700
-    scales below the mean, and these primitives are bounded by the board.
-    """
-    scale = std * SCALE_FROM_STD
-
-    def calibrate(value: float) -> float:
-        return 1.0 / (1.0 + exp(-(value - mean) / scale))
-
-    return calibrate
 
 
 def tableCalibrator(knots: list[float], uniforms: list[float]) -> Callable[[float], float]:
@@ -133,7 +108,4 @@ def calibrator(name: str) -> Callable[[float], float]:
     if name in QUANTILE_KNOTS:
         knots, uniforms = QUANTILE_KNOTS[name]
         return tableCalibrator(knots, uniforms)
-    if name in LOGISTIC_FIT:
-        mean, std = LOGISTIC_FIT[name]
-        return logisticCalibrator(mean, std)
     raise ValueError(f"no calibration measured for {name!r}; known: {sorted(PRIMITIVES)}")

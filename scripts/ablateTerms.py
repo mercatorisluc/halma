@@ -17,18 +17,16 @@ Both numbers are reported because they answer different questions.
 from __future__ import annotations
 
 import argparse
-import math
 from typing import TYPE_CHECKING
 
-from game.gameManager import ComputedGame
 from game.player import Computer
 from heuristics.strategy import Strategy
+from scripts.matchStats import Bot, Result, playMatch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from game.board import HalmaBoard
     from game.player import HalmaPlayer
+    from scripts.matchStats import MakePlayer
 
 # The shape terms of `shaped`, by the name this script refers to them by.
 TERMS: dict[str, str] = {
@@ -56,32 +54,28 @@ class AblatedShaped(Strategy):
         )
 
 
-def playMatch(
-    makeChallenger: Callable[[], Strategy], games: int, seed: int
-) -> tuple[int, int, int]:
-    """Wins, draws and losses for the challenger against full `shaped`."""
-    wins = draws = losses = 0
-    for i in range(games):
-        game = ComputedGame()
-        game.seed(seed + i)
-        challenger, reference = Computer(1, "shaped"), Computer(2, "shaped")
-        challenger.strategy = makeChallenger()
-        game.initGame([challenger, reference])
-        winner = game.play()
-        if winner is None:
-            draws += 1
-        elif winner == 1:
-            wins += 1
-        else:
-            losses += 1
-    return wins, draws, losses
+def challenger(keep: list[str], rescale: bool) -> MakePlayer:
+    """Seat `shaped`, then swap its scorer for the ablated one.
+
+    The bot is built the normal way and patched afterwards rather than
+    registered as a strategy of its own: an ablation is a throwaway variant and
+    has no business in `Strategy.SCORERS`, which is the single source of truth
+    for which bots exist.
+    """
+
+    def make(seat: int, _index: int) -> HalmaPlayer:
+        player = Computer(seat, "shaped")
+        player.strategy = AblatedShaped(keep, rescale)
+        return player
+
+    return make
 
 
-def report(label: str, wins: int, draws: int, losses: int) -> None:
-    games = wins + draws + losses
-    rate = wins / games
-    margin = 1.96 * math.sqrt(max(rate * (1 - rate), 1e-9) / games)
-    print(f"{label:<42}{rate * 100:5.1f} +/- {margin * 100:4.1f}   draws {draws}")
+def report(label: str, result: Result) -> None:
+    print(
+        f"{label:<42}{result.winRate * 100:5.1f} +/- {result.marginOfError * 100:4.1f}"
+        f"   draws {result.draws}"
+    )
 
 
 def main() -> None:
@@ -104,12 +98,8 @@ def main() -> None:
         keep = [name for name in TERMS if name != term]
         for rescale in rescales:
             suffix = ", rescaled" if rescale else ""
-            wins, draws, losses = playMatch(
-                lambda keep=keep, rescale=rescale: AblatedShaped(keep, rescale),
-                args.games,
-                args.seed,
-            )
-            report(f"without {term}{suffix}", wins, draws, losses)
+            result = playMatch(challenger(keep, rescale), Bot("shaped"), args.games, args.seed)
+            report(f"without {term}{suffix}", result)
 
 
 if __name__ == "__main__":

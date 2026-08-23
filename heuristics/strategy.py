@@ -36,11 +36,10 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
         "jumpPotential": 0.04,
     },
     # `calibratedPlain` -- distance and home only, no shape terms -- was removed
-    # on 2026-08-21 and is not coming back. It agreed with `distance` on 91.4%
-    # of midgame positions and 97.5% of early ones, and won 48.0% against it,
-    # so both measures said the same thing: a bigger `home` weight is not a
-    # different bot. Its slot went to `calibratedClusterJump` below. Restore it
-    # from git if a lean control is ever wanted, but not for a pool.
+    # on 2026-08-21 and is not coming back: move agreement and win rate both said
+    # it was `distance` with a bigger `home` weight, not a different bot. Its
+    # slot went to `calibratedClusterJump` below. Restore it from git if a lean
+    # control is ever wanted, but not for a pool.
     #
     # One shape term each, so they play visibly differently.
     "calibratedCluster": {
@@ -52,11 +51,10 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
     },
     # `calibratedLag` -- `stragglerLag` as the only shape term -- was removed on
     # 2026-08-21 for the same reason as `calibratedPlain`, one step milder: it
-    # agreed with `distance` on 87.5% of midgame positions and with
-    # `calibratedPlain` on 90.4%, so it sat in the distance cluster rather than
-    # away from it and added no coverage a pool did not already have. That is a
-    # verdict on this weight vector, not on `stragglerLagScore`, which stays in
-    # `calibrated` at 0.166 and is worth 24.5% to `shaped` when ablated.
+    # sat inside the distance cluster rather than away from it, so it added no
+    # coverage a pool did not already have. That is a verdict on this weight
+    # vector, not on `stragglerLagScore`, which stays in `calibrated` at 0.166
+    # and is one of the terms `shaped` most misses when ablated.
     "calibratedJump": {
         "distance": 1.0,
         "home": 2.803,
@@ -64,27 +62,22 @@ CALIBRATED_VARIANTS: dict[str, dict[str, float]] = {
         "stragglerLag": 0.0,
         "jumpPotential": 0.316,
     },
-    # The one pair, replacing `calibratedPlain`, which the 2026-08-21 agreement
-    # measurement found to be `distance` with a bigger `home` weight (91.4% of
-    # midgame positions) and therefore worth nothing to a pool that can hold
-    # `distance` itself. `clustering` and `jumpPotential` were picked as the two
-    # axes furthest apart in the panel.
+    # The pair that replaced `calibratedPlain`. `clustering` and `jumpPotential`
+    # were picked as the two axes furthest apart in the panel.
     #
     # **These are not the weights the fit ranked first**, and that is deliberate.
-    # Its three finalists were statistically level -- 60.3 +/- 5.5, 56.3 +/- 5.6,
-    # 56.3 +/- 5.6 over 300 games -- so win rate did not separate them, and win
-    # rate is not what this variant is for. Move agreement did separate them, in
-    # the opposite order: the fit's winner agreed with `calibrated` on 83.0% of
-    # midgame positions, this one on 60.0%, and its highest agreement with
-    # anything is 63.2%. Adopting the strongest would have rebuilt the duplicate
-    # the variant exists to replace.
+    # Its three finalists were statistically level on win rate, so win rate did
+    # not separate them -- and win rate is not what this variant is for. Move
+    # agreement did separate them, in the opposite order, and this is the least
+    # duplicative of the three. Adopting the strongest would have rebuilt the
+    # duplicate the variant exists to replace. The tables are in ARCHITECTURE.md
+    # under "Fitting for strength does not fit for a pool".
     #
     # The fit drove `jumpPotential` to 0.040 -- the same near-off value it chose
     # for `calibrated` -- so this bot is cluster-driven in practice; the name
     # records the term set that was searched, not two live terms. What makes it
-    # different from `calibratedCluster` is the weights, not the terms: 2.4x the
-    # clustering and 3.9x the home pull, which is enough that the two agree on
-    # only 29.9% of midgame positions.
+    # different from `calibratedCluster` is the weights, not the terms, and that
+    # is enough to make the two disagree on most midgame positions.
     "calibratedClusterJump": {
         "distance": 1.0,
         "home": 3.886,
@@ -112,18 +105,6 @@ class Strategy:
         "straggler": "straggler",
         "random": "chooseRandom",
         **dict.fromkeys(CALIBRATED_VARIANTS, "calibrated"),
-    }
-
-    # The names these bots went by until 2026-08-14, still accepted so that
-    # every command line, script and training recipe written down before then
-    # keeps working. They resolve to the canonical name at construction, so
-    # nothing downstream ever sees the old spelling. Deliberately temporary --
-    # drop them once the recorded recipes have been moved over.
-    ALIASES: ClassVar[dict[str, str]] = {
-        "advancedDistScore": "distance",
-        "simpleDistScore": "tipDistance",
-        "sparsityScore": "shaped",
-        "bottleneck": "straggler",
     }
 
     # How heavily stragglerTravelScore counts next to the distance term. Measured
@@ -156,7 +137,6 @@ class Strategy:
     ]
 
     def __init__(self, strategyName: str) -> None:
-        strategyName = self.ALIASES.get(strategyName, strategyName)
         # Fail here rather than at the first scoring call, which used to raise a
         # bare KeyError somewhere deep inside a game.
         if strategyName not in self.SCORERS:
@@ -176,14 +156,12 @@ class Strategy:
 
         The distance term used to be blended half-and-half with
         `tipDistanceScore`, the static distance to the tip of the target
-        triangle. Dropping that half is both stronger and cheaper, measured over
-        400 games with seats swapped: 60.5% (+/- 4.8) head to head, and better
-        against every third party too -- 20.2% against `straggler` where the
-        blend scored 18.5%, 21.8% against `shaped` where it scored 19.2%,
-        92.0% against `tipDistance` where it scored 88.8%. What it gains is
-        not a better distance measure but a bigger share for `unfilledTargetScore`:
-        keeping the distance term's old weight and only swapping the measure
-        scores 34.0%.
+        triangle. Dropping that half is both stronger and cheaper -- stronger
+        head to head and against every third party, measured over 400 games
+        with seats swapped (figures in ARCHITECTURE.md). What it gains is not a
+        better distance measure but a bigger share for `unfilledTargetScore`:
+        keeping the old weight and only swapping the measure is much worse than
+        either.
 
         Cheaper because `openTargetDistanceScore` is O(1) -- it reads the
         incrementally maintained `player.distanceScore` -- where the static term
@@ -209,32 +187,25 @@ class Strategy:
     def shaped(self, board: HalmaBoard, player: HalmaPlayer) -> float:
         """Distance and home progress, shaped by three terms that fade out.
 
-        The three shape terms -- clustering, group cohesion, jump potential --
-        are opening advice. Weighted equally with the progress terms they used
-        to outvote them in the endgame and the bot could not finish: measured
-        in a stuck position, moving a piece into the target improved distance
-        by -0.052 and home bonus by -0.067 while the shape terms objected by
-        +0.143, so the move scored worse and was never played. Two pieces stayed
-        out forever, 37 of 40 self-play games ended in the move limit.
+        The strongest of the one-ply bots; the panel it is measured on is in
+        ARCHITECTURE.md.
 
-        Multiplying them by `unfilledTargetScore` makes them fade as pieces
-        arrive and vanish once everything is home, leaving only progress to
-        decide the endgame. That single change removed every draw (0 of 40) and
-        took the bot from 22.5% against `distance` to 78.3%.
+        **The fade is load-bearing, not decoration.** Clustering, cohesion and
+        jump potential are opening advice, and weighted flat against the
+        progress terms they outvote them in the endgame -- the bot then cannot
+        finish, because moving a piece home improves distance less than the
+        shape terms object. That version left two pieces out forever and hit
+        the move limit in 37 of 40 games. Multiplying by `unfilledTargetScore`
+        makes them vanish as pieces arrive, which removed every draw. Do not
+        remove the `home *` factor.
 
         The distance term is `openTargetDistanceScore`, the same one
-        `plainDistance` uses. It used to be a blend of that and the static tip
-        distance, which is roughly 7.5x larger, and the shape terms were
-        weighted against *that* magnitude implicitly -- swapping the measure
-        without touching the weights therefore handed them the vote and the bot
-        won 0.0% of 800 games. Making the weight explicit and re-measuring it
-        (see SHAPE_WEIGHT) is what let the blend go, and it bought a much
-        stronger bot rather than merely an equal one. Over 400 games with seats
-        swapped it wins 81.3% against the version it replaced, and against the
-        rest of the panel, with that version's score for comparison: 58.2%
-        against `straggler` (was 38.0%), 92.0% against `distance` (was 74.5%),
-        99.8% against `tipDistance` (was 96.8%). That makes it the strongest of
-        the one-ply bots.
+        `plainDistance` uses. It used to be blended with the static tip
+        distance, which is ~7.5x larger, and the shape terms were implicitly
+        weighted against *that* magnitude -- so swapping the measure without
+        touching the weights hands them the vote and the bot wins 0.0% of 800
+        games. `SHAPE_WEIGHT` exists because of that, and its comment carries
+        the sweep.
         """
         home = board.unfilledTargetScore(player)
         shape = (
@@ -294,7 +265,7 @@ class Strategy:
 
         Advancing the pack is not enough to win -- the last piece home ends the
         game. Adding that straggler's remaining distance beats `plainDistance`
-        on its own by a wide margin (84% over 150 games).
+        on its own by a wide margin.
         """
         return self.plainDistance(
             board, player
@@ -330,10 +301,9 @@ class LookaheadStrategy(Strategy):
     game -- which is fine for playing a human but far too slow for generating
     training data.
 
-    It is the strongest bot here: 90% (+/- 9.3 over 40 games) against
-    ``straggler``, which is itself 84% against ``distance``. Worst
-    observed move takes 132ms, which is a natural-feeling pause in a
-    turn-based game but far too slow to generate training data with.
+    It is the strongest bot here, by a wide margin over ``straggler``. Worst
+    observed move takes 132ms, which is a natural-feeling pause in a turn-based
+    game but far too slow to generate training data with.
 
     This is also the only place where scoring the opponent pays off. At one ply
     the opponent's position is identical across all of the mover's candidates,

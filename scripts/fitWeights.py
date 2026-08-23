@@ -28,11 +28,10 @@ a run to rule out:
   "agree with the search" means "be `straggler`", and the vectors maximising it
   lost every game they played. Kept as a diagnostic, never as a target.
 - **Do not fit against one opponent.** Fitting on `shaped` alone produced a
-  vector that beat `shaped` 62.7% over fresh seeds and was *weaker* than
-  `shaped` against everyone else -- 53.0% against `straggler` where `shaped`
-  scores 58.2%, 82.3% against `distance` where it scores 92.0%. These bots are
-  not transitive enough for that: what it found was a counter to one opponent.
-  Hence a pool, cycled by seed.
+  vector that beat `shaped` over fresh seeds and was *weaker* than `shaped`
+  against everyone else. These bots are not transitive enough for that: what it
+  found was a counter to one opponent, not a better bot. Hence a pool, cycled
+  by seed. Figures in ARCHITECTURE.md.
 
 Weights are scale-free -- multiplying all of them by a positive constant
 reorders nothing -- so `distance` is pinned at 1.0 and never searched.
@@ -47,12 +46,17 @@ from dataclasses import dataclass
 from functools import partial
 from itertools import combinations
 from multiprocessing import Pool
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from game.gameManager import ComputedGame
 from game.player import Computer
 from heuristics.strategy import CALIBRATED_VARIANTS, LookaheadStrategy, Strategy
+from scripts.matchStats import BotPool, marginOfError, playMatch
+
+if TYPE_CHECKING:
+    from game.player import HalmaPlayer
 
 SAMPLING_BOTS = ["distance", "tipDistance", "shaped", "straggler"]
 ANCHORS = ["shaped", "straggler", "distance"]
@@ -149,32 +153,41 @@ def randomWeights(count: int, active: list[str], rng: np.random.Generator) -> np
     return vectors
 
 
-def playMatch(
+@dataclass(frozen=True)
+class Weighted:
+    """Seat `variant`, then overwrite its weight vector with the candidate's.
+
+    A frozen dataclass rather than a closure because `rank` hands this to a
+    `multiprocessing.Pool` and a lambda cannot be pickled.
+    """
+
+    variant: str
+    weights: tuple[float, ...]
+
+    def __call__(self, seat: int, _index: int) -> HalmaPlayer:
+        player = Computer(seat, self.variant)
+        player.strategy.weights = dict(zip(Strategy.WEIGHT_ORDER, self.weights, strict=True))
+        return player
+
+
+def playCandidate(
     weights: list[float], games: int, seed: int, opponents: list[str], variant: str
 ) -> int:
     """Wins for this weight vector against a pool, over a fixed seed set.
 
-    The pool is cycled by seed rather than played as separate matches, so every
-    candidate meets the same opponent on the same seed and the pairing holds.
+    The pool is cycled by game index rather than played as separate matches, so
+    every candidate meets the same opponent on the same seed and the pairing
+    holds.
     """
-    asDict = dict(zip(Strategy.WEIGHT_ORDER, weights, strict=True))
-    wins = 0
-    for i in range(games):
-        game = ComputedGame()
-        game.seed(seed + i)
-        challenger = Computer(1, variant)
-        challenger.strategy.weights = asDict
-        game.initGame([challenger, Computer(2, opponents[i % len(opponents)])])
-        if game.play() == 1:
-            wins += 1
-    return wins
+    result = playMatch(Weighted(variant, tuple(weights)), BotPool(tuple(opponents)), games, seed)
+    return result.wins
 
 
 def rank(
     candidates: np.ndarray, games: int, seed: int, opponents: list[str], variant: str, jobs: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Win rate of every candidate, best first; returns (order, rates)."""
-    play = partial(playMatch, games=games, seed=seed, opponents=opponents, variant=variant)
+    play = partial(playCandidate, games=games, seed=seed, opponents=opponents, variant=variant)
     rows = [row.tolist() for row in candidates]
     if jobs > 1:
         with Pool(jobs) as pool:
@@ -189,10 +202,6 @@ def describe(weights: np.ndarray) -> str:
     return "  ".join(
         f"{name}={weight:.3f}" for name, weight in zip(Strategy.WEIGHT_ORDER, weights, strict=True)
     )
-
-
-def margin(rate: float, games: int) -> float:
-    return 1.96 * math.sqrt(max(rate * (1 - rate), 1e-9) / games)
 
 
 def diagnose(positions: int, seed: int) -> None:
@@ -244,7 +253,7 @@ def main() -> None:
             note = "  (control)" if np.array_equal(candidates[index], control) else ""
             rate = float(rates[index])
             print(
-                f"  {rate * 100:5.1f} +/- {margin(rate, games) * 100:4.1f}"
+                f"  {rate * 100:5.1f} +/- {marginOfError(rate, games) * 100:4.1f}"
                 f"   {describe(candidates[index])}{note}"
             )
         candidates = candidates[order[:keep]]

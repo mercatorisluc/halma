@@ -20,7 +20,9 @@ possible frontend on top of it.
 
 For how it all fits together — layer diagram, board geometry, the field
 addressing schemes and the invariants to respect — see
-[ARCHITECTURE.md](ARCHITECTURE.md).
+[ARCHITECTURE.md](ARCHITECTURE.md). For what has actually been measured —
+bot strengths, training results, and the things that did not work — see
+[RESULTS.md](RESULTS.md).
 
 ## Setup
 

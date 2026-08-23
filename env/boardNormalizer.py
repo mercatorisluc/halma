@@ -25,11 +25,6 @@ class Normalizer:
     def initCoordsX(self):
         return [x for x, _, _ in self.boardStructure]
 
-    def turnBoard120DegreesPermutation(self):
-        permutation = [(-x - y, x, _) for x, y, _ in self.boardStructure]
-        permutation.sort(key=lambda x: (x[1], x[0]))
-        return np.array([x[2] for x in permutation])
-
     def turnBoard240DegreesPermutation(self):
         """Player 2's actual corner, not player 3's.
 

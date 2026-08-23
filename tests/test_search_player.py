@@ -3,7 +3,7 @@
 Everything here fails silently in production. A search that ranks by the wrong
 quantity still returns a legal move, and the only symptom is a policy that
 plays slightly worse than the one it wraps -- which is what was in fact
-measured (ARCHITECTURE.md), so "it plays badly" cannot be used as evidence that
+measured (RESULTS.md), so "it plays badly" cannot be used as evidence that
 anything is broken. Hence these pin the properties rather than the strength:
 the shaping correction, the repetition rule, and that ranking hands back the
 moves it was given.

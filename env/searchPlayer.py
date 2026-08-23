@@ -21,7 +21,7 @@ Three things it is built out of, none of them new:
   remaining travel". ``_value`` adds ``w * phi(s)`` back.
 
 * **Repetition is a rule here, not something learned.** Two deterministic
-  policies deadlock (ARCHITECTURE.md: 2% of the opening census, 12.8% off the
+  policies deadlock (RESULTS.md: 2% of the opening census, 12.8% off the
   beaten track), and no amount of training addresses it, because PPO samples
   its own actions and the cycle never arises in training. A search can simply
   decline to re-enter a position it has already been in, which is why this

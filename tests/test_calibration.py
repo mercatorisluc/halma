@@ -11,7 +11,6 @@ import pytest
 from heuristics.calibration import (
     PRIMITIVES,
     calibrator,
-    logisticCalibrator,
     tableCalibrator,
 )
 
@@ -67,10 +66,6 @@ def test_table_survives_a_repeated_knot():
     # and must not divide by it.
     calibrate = tableCalibrator([1.0, 1.0, 2.0], [0.2, 0.5, 0.8])
     assert 0.0 <= calibrate(1.0) <= 1.0
-
-
-def test_logistic_is_centred_on_its_mean():
-    assert logisticCalibrator(3.0, 1.0)(3.0) == pytest.approx(0.5)
 
 
 def test_board_primitives_calibrate_at_the_starting_position(board, game):

@@ -12,59 +12,17 @@ is randomised per game, so first-move advantage averages out.
 from __future__ import annotations
 
 import argparse
-import math
-from dataclasses import dataclass
 from functools import partial
 from itertools import combinations
 from multiprocessing import Pool
 
-from game.gameManager import ComputedGame
-from game.player import Computer
 from heuristics.strategy import STRATEGY_NAMES
+from scripts.matchStats import Bot, Result, playMatch
 
 
-@dataclass
-class Result:
-    wins: int = 0
-    losses: int = 0
-    draws: int = 0
-    moves: int = 0
-
-    @property
-    def games(self) -> int:
-        return self.wins + self.losses + self.draws
-
-    @property
-    def winRate(self) -> float:
-        return self.wins / self.games if self.games else 0.0
-
-    @property
-    def marginOfError(self) -> float:
-        """Rough 95% interval half-width for the win rate."""
-        if not self.games:
-            return 0.0
-        p = self.winRate
-        return 1.96 * math.sqrt(max(p * (1 - p), 1e-9) / self.games)
-
-
-def playMatch(strategyA: str, strategyB: str, games: int, seed: int = 0) -> Result:
-    """Play ``games`` games of A (seat 1) against B (seat 2)."""
-    result = Result()
-    for i in range(games):
-        game = ComputedGame()
-        game.seed(seed + i)
-        game.initGame(
-            [Computer(1, strategyA), Computer(2, strategyB)],
-        )
-        winner = game.play()
-        result.moves += game.gameLength()
-        if winner is None:
-            result.draws += 1
-        elif winner == 1:
-            result.wins += 1
-        else:
-            result.losses += 1
-    return result
+def playPair(strategyA: str, strategyB: str, games: int, seed: int) -> Result:
+    """One matchup, as a picklable top-level function for the worker pool."""
+    return playMatch(Bot(strategyA), Bot(strategyB), games, seed)
 
 
 def main() -> None:
@@ -101,7 +59,7 @@ def main() -> None:
     header = f"{'seat 1':<18} {'seat 2':<18} {'win%':>14}  {'draws':>6}  {'avg moves':>9}"
     print(header)
     print("-" * len(header))
-    play = partial(playMatch, games=args.games, seed=args.seed)
+    play = partial(playPair, games=args.games, seed=args.seed)
     if args.jobs > 1:
         with Pool(args.jobs) as pool:
             results = pool.starmap(play, matchups)
