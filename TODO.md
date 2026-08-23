@@ -45,12 +45,6 @@ turned up a caveat that colours every argmax number on record: against
 a deterministic bot, 30 argmax games produce about 5 distinct game lines, so
 those margins are far too tight.
 
-**Where to pick up:** everything blocking the rebuild is now decided — panel,
-pool, teacher. What is left before committing to it is the 500k rerun of the
-teacher comparison, under "Calibration: what is left", and then the rebuild
-itself. Items above that section predate the panel freeze and should be read
-with that in mind.
-
 **2026-08-23: a full-codebase review, and its cleanup, are done.** Two broken
 entry points fixed, 482 lines of unrunnable scripts and four pieces of dead code
 deleted, five scripts moved onto one match harness, the league made flag-driven,
@@ -62,7 +56,37 @@ a bot or a policy plays, so no recorded measurement was invalidated.
 `ARCHITECTURE.md`, which is meant to stop growing. And a `doc-sync` subagent
 (`.claude/agents/`) will tell you which doc passages a change has just made
 false — worth running before committing anything that touches `game/`,
-`heuristics/` or `env/`.
+`heuristics/` or `env/`. There is also a `halma-measure` skill holding the
+launch rules for long runs (`python -u`, no `Pool` in a heredoc, no editing
+imported sources mid-run) and what each command roughly costs.
+
+---
+
+## Where to pick up
+
+Read this first; everything above is history and everything below is the queue.
+
+**The next real piece of work is the rebuild**, and nothing blocks it any more:
+the panel is frozen at the four calibrated variants, the pool is those four,
+and the teacher is `calibrated` alone. Two steps, in order:
+
+1. **Rerun the teacher comparison at 500k** — under "Calibration: what is
+   left". The 2026-08-22 result was measured at equal *cost*, which is the
+   right basis for choosing today but not for closing the question, and 500k is
+   the budget the rebuild will use anyway. Cheap to decide against.
+2. **Re-clone and retrain**, the three stages in `CLAUDE.md`'s command block.
+   That is the whole point of the last three weeks of panel work.
+
+**Two things only you can do**, both small and both outside the queue above:
+
+- **Back `models/Talos2.0_round5` up somewhere off this disk.** Single copy,
+  not in git, ~5 hours to regenerate. `models/manifest.md` states the risk.
+- **Decide whether `Talos2.0_round5` earns the name `Talos2.0`** — under "Now".
+  It has earned it on everything measurable except argmax against `lookahead2`,
+  where it is statistically level with generation 1.
+
+Sections above "Calibration: what is left" predate the 2026-08-21 panel freeze
+and should be read with that in mind.
 
 ## The panel moved — decide what that costs
 
